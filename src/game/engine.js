@@ -1,0 +1,274 @@
+// ================= ANTI-MONOPOLY · MOTORUL =================
+// Mașină de stare PURĂ, agnostică de UI. Toate acțiunile primesc starea și
+// întorc o stare NOUĂ (imutabil) — ușor de sincronizat online (o gazdă aplică
+// acțiunea, trimite starea rezultată tuturor). Randomul zarului se poate injecta
+// (pentru teste + pentru „gazda aruncă, ceilalți văd").
+
+import { BOARD, START, JAIL, GOTOJAIL, FUNDATIA, groupIndexes, GROUP_SIZE } from './board.js';
+
+export const START_MONEY = 1500;
+export const PASS_START = 100;   // trecere peste START
+export const LAND_START = 200;   // aterizare fix pe START
+
+const PLAYER_COLORS = {
+  competitor: '#2E9E5B', // verde
+  monopolist: '#3B6FE0', // albastru
+};
+
+// ---------- utilitare ----------
+export function clone(state) {
+  return JSON.parse(JSON.stringify(state));
+}
+function log(state, text) {
+  state.log = state.log || [];
+  state.log.push({ t: Date.now(), text });
+  if (state.log.length > 200) state.log = state.log.slice(-200);
+}
+export function currentPlayer(state) {
+  return state.players.find(p => p.id === state.turn) || null;
+}
+export function ownerOf(state, idx) {
+  const pid = state.ownership?.[idx];
+  return pid ? state.players.find(p => p.id === pid) : null;
+}
+export function ownsWholeGroup(state, playerId, group) {
+  const idxs = groupIndexes(group);
+  return idxs.every(i => state.ownership?.[i] === playerId);
+}
+
+// ---------- creare / lobby ----------
+export function createGame({ code, hostName, hostRole = 'competitor', mode = 'classic' }) {
+  const host = makePlayer(hostName, hostRole);
+  return {
+    code: code || randomCode(),
+    mode,                     // 'classic' | 'short'
+    status: 'lobby',
+    players: [host],
+    hostId: host.id,
+    ownership: {},
+    buildings: {},
+    mortgaged: {},
+    turn: null,
+    dice: null,
+    doublesCount: 0,
+    pending: null,            // { type: 'buy', idx } etc.
+    winnerId: null,
+    log: [{ t: Date.now(), text: `${hostName} a creat camera.` }],
+  };
+}
+
+export function makePlayer(name, role = 'competitor') {
+  return {
+    id: `p_${Math.random().toString(36).slice(2, 9)}`,
+    name: String(name || 'Jucător').slice(0, 20),
+    role,                       // 'competitor' | 'monopolist'
+    color: PLAYER_COLORS[role],
+    pos: START,
+    money: START_MONEY,
+    inJail: false,
+    jailTurns: 0,
+    getOutFree: 0,
+    bankrupt: false,
+  };
+}
+
+export function addPlayer(state, name, role) {
+  const s = clone(state);
+  if (s.status !== 'lobby') return s;
+  if (s.players.length >= 6) return s;
+  const p = makePlayer(name, role || suggestRole(s));
+  s.players.push(p);
+  log(s, `${p.name} s-a alăturat (${p.role === 'competitor' ? '🟢 Competitor' : '🔵 Monopolist'}).`);
+  return s;
+}
+
+export function setRole(state, playerId, role) {
+  const s = clone(state);
+  const p = s.players.find(x => x.id === playerId);
+  if (p && s.status === 'lobby') { p.role = role; p.color = PLAYER_COLORS[role]; }
+  return s;
+}
+
+// Rolul sugerat păstrează echilibrul (nr. egal ±1).
+export function suggestRole(state) {
+  const comp = state.players.filter(p => p.role === 'competitor').length;
+  const mono = state.players.filter(p => p.role === 'monopolist').length;
+  return comp <= mono ? 'competitor' : 'monopolist';
+}
+
+export function startGame(state, { firstPlayerId } = {}) {
+  const s = clone(state);
+  if (s.players.length < 2) return s;
+  s.status = 'playing';
+  s.turn = firstPlayerId || s.players[0].id;
+  s.dice = null;
+  s.doublesCount = 0;
+  log(s, 'Jocul a început! 🎲');
+  return s;
+}
+
+// ---------- tura: aruncă zarul ----------
+export function applyRoll(state, dice) {
+  const s = clone(state);
+  if (s.status !== 'playing' || s.pending) return s;
+  const p = currentPlayer(s);
+  if (!p || p.bankrupt) return s;
+
+  const [d1, d2] = dice;
+  s.dice = [d1, d2];
+  const isDouble = d1 === d2;
+
+  // Închisoare: dacă e în închisoare, dublele îl scot.
+  if (p.inJail) {
+    if (isDouble) {
+      p.inJail = false; p.jailTurns = 0;
+      log(s, `${p.name} a dat dublă și iese din închisoare!`);
+    } else {
+      p.jailTurns += 1;
+      log(s, `${p.name} nu a dat dublă (${p.jailTurns}/3).`);
+      if (p.jailTurns >= 3) { p.inJail = false; p.jailTurns = 0; p.money -= 50; log(s, `${p.name} plătește €50 și iese.`); }
+      s.doublesCount = 0;
+      return s; // rămâne pe loc, tura se va încheia
+    }
+  }
+
+  // 3 duble la rând → închisoare
+  if (isDouble) {
+    s.doublesCount = (s.doublesCount || 0) + 1;
+    if (s.doublesCount >= 3) {
+      sendToJail(s, p);
+      log(s, `${p.name} a dat 3 duble → la închisoare!`);
+      s.doublesCount = 0;
+      return s;
+    }
+  } else {
+    s.doublesCount = 0;
+  }
+
+  move(s, p, d1 + d2);
+  resolveLanding(s, p, d1 + d2);
+  return s;
+}
+
+function move(s, p, steps) {
+  const from = p.pos;
+  let np = (from + steps) % 40;
+  // trecere peste START (fără să pice fix pe el)
+  if (np < from && np !== START) { p.money += PASS_START; log(s, `${p.name} trece pe la START (+€${PASS_START}).`); }
+  else if (np < from && np === START) { /* pică fix pe start, tratat mai jos */ }
+  else if (np > from) { /* fără trecere */ }
+  p.pos = np;
+}
+
+function resolveLanding(s, p, steps) {
+  const idx = p.pos;
+  const sq = BOARD[idx];
+
+  if (idx === START) { p.money += LAND_START; log(s, `${p.name} aterizează pe START (+€${LAND_START}).`); return; }
+  if (sq.type === 'corner') {
+    if (sq.kind === 'gotojail') { sendToJail(s, p); log(s, `${p.name} → Consiliul Concurenței: la închisoare!`); return; }
+    if (sq.kind === 'fundatia') { log(s, `${p.name} pe Fundația Anti-Monopoly.`); return; } // efect complet la Faza 2
+    return; // jail (vizită) / restul
+  }
+  if (sq.type === 'tax') { p.money -= sq.amount; log(s, `${p.name} plătește ${sq.name} (−€${sq.amount}).`); return; }
+  if (sq.type === 'card') { log(s, `${p.name} trage o carte ${p.role === 'competitor' ? '🟢' : '🔵'} (efect la Faza 3).`); return; }
+
+  // proprietăți / transport / utilități
+  if (sq.type === 'property' || sq.type === 'transport' || sq.type === 'utility') {
+    const owner = ownerOf(s, idx);
+    if (!owner) {
+      if (p.money >= sq.price) s.pending = { type: 'buy', idx };
+      return;
+    }
+    if (owner.id === p.id) return; // a lui
+    const rent = computeRent(s, idx, steps);
+    p.money -= rent; owner.money += rent;
+    log(s, `${p.name} plătește €${rent} chirie lui ${owner.name} (${sq.name}).`);
+  }
+}
+
+// Chirie de bază (Faza 1). Monopol/clădiri/coeficient companii → Faza 2.
+export function computeRent(s, idx, diceSum = 0) {
+  const sq = BOARD[idx];
+  const ownerId = s.ownership?.[idx];
+  if (s.mortgaged?.[idx]) return 0;
+  if (sq.type === 'property') {
+    let rent = sq.baseRent;
+    const owner = s.players.find(p => p.id === ownerId);
+    // Monopolistul cu tot orașul: chirie de bază dublată (Faza 2 rafinează clădirile).
+    if (owner?.role === 'monopolist' && ownsWholeGroup(s, ownerId, sq.group)) rent *= 2;
+    const houses = s.buildings?.[idx] || 0;
+    if (houses > 0) rent += houses * Math.round(sq.baseRent * 0.75);
+    return rent;
+  }
+  if (sq.type === 'transport') {
+    const count = countOwned(s, ownerId, 'transport');
+    return 25 * count; // 25/50/75/100
+  }
+  if (sq.type === 'utility') {
+    const count = countOwned(s, ownerId, 'utility');
+    return (diceSum || 7) * (count >= 2 ? 10 : 4);
+  }
+  return 0;
+}
+
+function countOwned(s, playerId, type) {
+  let n = 0;
+  BOARD.forEach((sq, i) => { if (sq.type === type && s.ownership?.[i] === playerId) n++; });
+  return n;
+}
+
+function sendToJail(s, p) { p.pos = JAIL; p.inJail = true; p.jailTurns = 0; }
+
+// ---------- cumpărare ----------
+export function applyBuy(state) {
+  const s = clone(state);
+  if (s.pending?.type !== 'buy') return s;
+  const idx = s.pending.idx;
+  const p = currentPlayer(s);
+  const sq = BOARD[idx];
+  if (p && p.money >= sq.price) {
+    p.money -= sq.price;
+    s.ownership[idx] = p.id;
+    log(s, `${p.name} cumpără ${sq.name} (−€${sq.price}).`);
+  }
+  s.pending = null;
+  return s;
+}
+
+export function applyDeclineBuy(state) {
+  const s = clone(state);
+  if (s.pending?.type === 'buy') {
+    log(s, `${currentPlayer(s)?.name} refuză cumpărarea. (licitație — Faza 3)`);
+    s.pending = null;
+  }
+  return s;
+}
+
+// ---------- sfârșit tură ----------
+export function applyEndTurn(state) {
+  const s = clone(state);
+  if (s.status !== 'playing' || s.pending) return s;
+  // dublă → același jucător mai joacă o dată (dacă nu e în închisoare)
+  const p = currentPlayer(s);
+  const rolledDouble = s.dice && s.dice[0] === s.dice[1] && !p?.inJail && s.doublesCount > 0;
+  s.dice = null;
+  if (rolledDouble) { log(s, `${p.name} a dat dublă — mai joacă o dată.`); return s; }
+
+  s.doublesCount = 0;
+  const active = s.players.filter(x => !x.bankrupt);
+  const curIdx = active.findIndex(x => x.id === s.turn);
+  const next = active[(curIdx + 1) % active.length];
+  s.turn = next?.id || null;
+  return s;
+}
+
+// ---------- utils ----------
+export function randomCode() {
+  const letters = 'ABCDEFGHJKLMNPRSTUVWXYZ';
+  const c = () => letters[Math.floor(Math.random() * letters.length)];
+  return `${c()}${c()}${c()}${Math.floor(10 + Math.random() * 89)}`;
+}
+export function rollDicePair() {
+  return [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
+}
