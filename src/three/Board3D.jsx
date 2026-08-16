@@ -36,6 +36,13 @@ function Tile({ i, game }) {
 
   const label = corner ? cornerShort(sq) : sq.name;
   const price = 'price' in sq ? `€${sq.price}` : '';
+  // OUT = direcția spre EXTERIORUL tablei; bara stă pe muchia interioară, prețul spre exterior.
+  const { side } = gridPos(i);
+  const OUT = ({ bottom: [0, 1], top: [0, -1], left: [-1, 0], right: [1, 0] })[side] || [0, 1];
+  const edge = w / 2 - 0.13;
+  const barGeo = (side === 'left' || side === 'right') ? [0.42, 0.06, w] : [w, 0.06, 0.42];
+  const along = (side === 'left' || side === 'right');
+  const nBuild = game.buildings?.[i] || 0;
 
   return (
     <group position={[x, 0, z]}>
@@ -43,10 +50,10 @@ function Tile({ i, game }) {
         <meshStandardMaterial color={corner ? '#F2F1EC' : '#FFFFFF'} roughness={0.75} metalness={0.02} />
       </RoundedBox>
 
-      {/* bară colorată de grup, pe muchia exterioară */}
+      {/* bară colorată de grup, pe muchia INTERIOARĂ (spre centru) */}
       {group && (
-        <mesh position={[0, H / 2 + 0.005, -w / 2 + 0.28]}>
-          <boxGeometry args={[w, 0.06, 0.5]} />
+        <mesh position={[-OUT[0] * edge, H / 2 + 0.005, -OUT[1] * edge]}>
+          <boxGeometry args={barGeo} />
           <meshStandardMaterial color={group.color} />
         </mesh>
       )}
@@ -59,28 +66,32 @@ function Tile({ i, game }) {
         </mesh>
       )}
 
-      {/* etichetă */}
-      <group position={[0, H / 2 + 0.02, group ? 0.18 : 0]} rotation={[-Math.PI / 2, 0, ry]}>
-        <Text fontSize={corner ? 0.24 : 0.2} maxWidth={w * 0.92} textAlign="center"
-          anchorX="center" anchorY="middle" color="#16181A" font={undefined} lineHeight={1}>
+      {/* nume — la centru */}
+      <group position={[0, H / 2 + 0.02, 0]} rotation={[-Math.PI / 2, 0, ry]}>
+        <Text fontSize={corner ? 0.24 : 0.19} maxWidth={w * 0.86} textAlign="center"
+          anchorX="center" anchorY="middle" color="#16181A" lineHeight={1}>
           {label}
         </Text>
-        {price && (
-          <Text position={[0, -w * 0.34, 0]} fontSize={0.19} anchorX="center" anchorY="middle" color="#333">
-            {price}
-          </Text>
-        )}
       </group>
+      {/* preț — spre muchia EXTERIOARĂ (departe de bară) */}
+      {price && (
+        <group position={[OUT[0] * (w * 0.32), H / 2 + 0.02, OUT[1] * (w * 0.32)]} rotation={[-Math.PI / 2, 0, ry]}>
+          <Text fontSize={0.185} anchorX="center" anchorY="middle" color="#333">{price}</Text>
+        </group>
+      )}
 
-      {/* case (clădiri) */}
-      {(game.buildings?.[i] || 0) > 0 && (
-        <group position={[0, H / 2, -w / 2 + 0.62]}>
-          {Array.from({ length: game.buildings[i] }).map((_, k) => (
-            <mesh key={k} position={[(k - (game.buildings[i] - 1) / 2) * 0.36, 0.13, 0]} castShadow>
-              <boxGeometry args={[0.26, 0.26, 0.26]} />
-              <meshStandardMaterial color={owner?.role === 'monopolist' ? '#C0392B' : '#2E9E5B'} />
-            </mesh>
-          ))}
+      {/* case (clădiri) — pe muchia interioară, lângă bară */}
+      {nBuild > 0 && (
+        <group position={[-OUT[0] * (w * 0.3), H / 2, -OUT[1] * (w * 0.3)]}>
+          {Array.from({ length: nBuild }).map((_, k) => {
+            const a = (k - (nBuild - 1) / 2) * 0.34;
+            return (
+              <mesh key={k} position={[along ? 0 : a, 0.13, along ? a : 0]} castShadow>
+                <boxGeometry args={[0.24, 0.24, 0.24]} />
+                <meshStandardMaterial color={owner?.role === 'monopolist' ? '#C0392B' : '#2E9E5B'} />
+              </mesh>
+            );
+          })}
         </group>
       )}
 
