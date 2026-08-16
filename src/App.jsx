@@ -199,9 +199,10 @@ function Table({ game, setGame }) {
 
   return (
     <div className={`wrap game ${immersive ? 'immersive' : ''}`} ref={wrapRef}>
-      <button className="fsBtn" onClick={toggleImmersive} aria-label={immersive ? 'Ieși din ecran complet' : 'Ecran complet'}>
-        {immersive ? '✕' : '⛶'}
-      </button>
+      <div className="topBtns">
+        <button className="fsBtn" onClick={toggleMute} aria-label={muted ? 'Activează sunetul' : 'Oprește sunetul'}>{muted ? '🔇' : '🔊'}</button>
+        <button className="fsBtn" onClick={toggleImmersive} aria-label={immersive ? 'Ieși din ecran complet' : 'Ecran complet'}>{immersive ? '✕' : '⛶'}</button>
+      </div>
       <Suspense fallback={<div className="canvas3d" style={{ display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Se încarcă tabla 3D…</div>}>
         <Board3D game={game} dice={shownDice ?? game.dice} rollNonce={rollNonce} />
       </Suspense>
@@ -214,7 +215,6 @@ function Table({ game, setGame }) {
             {me?.role === 'competitor' ? '🟢' : '🔵'}
           </span>
           <span className="mon">€{me?.money}</span>
-          <button className="muteBtn" onClick={toggleMute} aria-label={muted ? 'Activează sunetul' : 'Oprește sunetul'}>{muted ? '🔇' : '🔊'}</button>
         </div>
 
         {game.dice && (
