@@ -5,6 +5,7 @@
 // (pentru teste + pentru „gazda aruncă, ceilalți văd").
 
 import { BOARD, START, JAIL, GOTOJAIL, FUNDATIA, groupIndexes, GROUP_SIZE } from './board.js';
+import { deckFor } from './cards.js';
 
 export const START_MONEY = 1500;
 export const PASS_START = 100;   // trecere peste START
@@ -147,7 +148,15 @@ export function applyRoll(state, dice) {
 
   move(s, p, d1 + d2);
   resolveLanding(s, p, [d1, d2]);
+  checkDebt(s, p);
   return s;
+}
+
+// Dacă jucătorul a ajuns pe minus, intră „în datorie": trebuie să facă rost de
+// bani (ipotecă / vinde case) sau declară faliment.
+function checkDebt(s, p) {
+  if (p && p.money < 0) s.debt = { playerId: p.id, amount: -p.money };
+  else if (s.debt && s.debt.playerId === p?.id && p.money >= 0) s.debt = null;
 }
 
 function move(s, p, steps) {
@@ -175,7 +184,7 @@ function resolveLanding(s, p, dice) {
     if (sq.kind === 'income') { s.pending = { type: 'incometax', idx }; return; } // alegere €200 / % active
     p.money -= sq.amount; log(s, `${p.name} plătește ${sq.name} (−€${sq.amount}).`); return;
   }
-  if (sq.type === 'card') { log(s, `${p.name} trage o carte ${p.role === 'competitor' ? '🟢' : '🔵'} (efect la Faza 3).`); return; }
+  if (sq.type === 'card') { drawCard(s, p, false); return; }
 
   // proprietăți / transport / utilități
   if (sq.type === 'property' || sq.type === 'transport' || sq.type === 'utility') {
@@ -186,6 +195,54 @@ function resolveLanding(s, p, dice) {
     }
     if (owner.id === p.id) return; // a lui
     const rent = computeRent(s, idx, steps);
+    p.money -= rent; owner.money += rent;
+    log(s, `${p.name} plătește €${rent} chirie lui ${owner.name} (${sq.name}).`);
+  }
+}
+
+// ---------- CĂRȚI ----------
+function drawCard(s, p, fromMove) {
+  const deck = deckFor(p.role);
+  const card = deck[Math.floor(Math.random() * deck.length)];
+  s.lastCard = { text: card.text, role: p.role };
+  log(s, `${p.name} ${p.role === 'competitor' ? '🟢' : '🔵'}: „${card.text}"`);
+
+  if (typeof card.money === 'number') p.money += card.money;
+  if (card.collectEach) {
+    for (const other of s.players) {
+      if (other.id !== p.id && !other.bankrupt) { other.money -= card.collectEach; p.money += card.collectEach; }
+    }
+  }
+  if (card.getOutFree) p.getOutFree = (p.getOutFree || 0) + 1;
+  if (card.jail) { sendToJail(s, p); return; }
+  if (!fromMove && (card.moveTo != null || card.moveBy != null)) {
+    if (card.moveTo != null) {
+      if (card.moveTo === START) { p.pos = START; p.money += LAND_START; log(s, `${p.name} → START (+€${LAND_START}).`); }
+      else { if (card.moveTo < p.pos) { p.money += PASS_START; } p.pos = card.moveTo; }
+    } else {
+      moveSimple(s, p, card.moveBy);
+    }
+    resolveLandingAfterCard(s, p);
+  }
+}
+function moveSimple(s, p, steps) {
+  const from = p.pos;
+  const np = (from + steps + 40) % 40;
+  if (np < from) { p.money += PASS_START; }
+  p.pos = np;
+}
+// Rezolvă noua căsuță după o carte de mutare, dar NU mai trage altă carte (fără recursie).
+function resolveLandingAfterCard(s, p) {
+  const sq = BOARD[p.pos];
+  if (p.pos === START) { p.money += LAND_START; return; }
+  if (sq.type === 'tax') { if (sq.kind === 'income') { s.pending = { type: 'incometax', idx: p.pos }; } else p.money -= sq.amount; return; }
+  if (sq.type === 'corner' && sq.kind === 'gotojail') { sendToJail(s, p); return; }
+  if (sq.type === 'corner' && sq.kind === 'fundatia') { return; }
+  if (sq.type === 'property' || sq.type === 'transport' || sq.type === 'utility') {
+    const owner = ownerOf(s, p.pos);
+    if (!owner) { if (p.money >= sq.price) s.pending = { type: 'buy', idx: p.pos }; return; }
+    if (owner.id === p.id) return;
+    const rent = computeRent(s, p.pos, 7);
     p.money -= rent; owner.money += rent;
     log(s, `${p.name} plătește €${rent} chirie lui ${owner.name} (${sq.name}).`);
   }
@@ -336,16 +393,176 @@ export function applyBuy(state) {
 export function applyDeclineBuy(state) {
   const s = clone(state);
   if (s.pending?.type === 'buy') {
-    log(s, `${currentPlayer(s)?.name} refuză cumpărarea. (licitație — Faza 3)`);
-    s.pending = null;
+    const idx = s.pending.idx;
+    log(s, `${currentPlayer(s)?.name} refuză. Se scoate la licitație ${BOARD[idx].name}.`);
+    s.pending = { type: 'auction', idx, highBid: 0, highBidderId: null, passed: [] };
   }
   return s;
+}
+
+// ---------- IPOTECĂ / VÂNZARE CASE ----------
+export function canMortgage(state, idx) {
+  const sq = BOARD[idx];
+  return sq && 'price' in sq && !state.mortgaged?.[idx] && (state.buildings?.[idx] || 0) === 0;
+}
+export function applyMortgage(state, idx) {
+  const s = clone(state);
+  const p = currentPlayer(s);
+  if (!p || s.ownership?.[idx] !== p.id || !canMortgage(s, idx)) return s;
+  const val = Math.round(BOARD[idx].price / 2);
+  s.mortgaged[idx] = true;
+  p.money += val;
+  log(s, `${p.name} ipotechează ${BOARD[idx].name} (+€${val}).`);
+  checkDebt(s, p);
+  return s;
+}
+export function applyUnmortgage(state, idx) {
+  const s = clone(state);
+  const p = currentPlayer(s);
+  if (!p || s.ownership?.[idx] !== p.id || !s.mortgaged?.[idx]) return s;
+  const cost = Math.round((BOARD[idx].price / 2) * 1.1);
+  if (p.money < cost) return s;
+  delete s.mortgaged[idx];
+  p.money -= cost;
+  log(s, `${p.name} răscumpără ${BOARD[idx].name} (−€${cost}).`);
+  return s;
+}
+export function applySellHouse(state, idx) {
+  const s = clone(state);
+  const p = currentPlayer(s);
+  if (!p || s.ownership?.[idx] !== p.id || (s.buildings?.[idx] || 0) === 0) return s;
+  const refund = Math.round(houseCost(idx, p.role) / 2);
+  s.buildings[idx] -= 1;
+  p.money += refund;
+  log(s, `${p.name} vinde o casă de pe ${BOARD[idx].name} (+€${refund}).`);
+  checkDebt(s, p);
+  return s;
+}
+
+// ---------- FALIMENT + CÂȘTIGĂTOR ----------
+// Cât mai poate strânge un jucător (ipotecând tot + vânzând casele).
+export function maxRaisable(state, playerId) {
+  let sum = 0;
+  BOARD.forEach((sq, i) => {
+    if (state.ownership?.[i] !== playerId || !('price' in sq)) return;
+    if (!state.mortgaged?.[i]) sum += Math.round(sq.price / 2);
+    const p = state.players.find(x => x.id === playerId);
+    sum += (state.buildings?.[i] || 0) * Math.round(houseCost(i, p?.role || 'competitor') / 2);
+  });
+  return sum;
+}
+export function mustBankrupt(state, playerId) {
+  const p = state.players.find(x => x.id === playerId);
+  if (!p || p.money >= 0) return false;
+  return p.money + maxRaisable(state, playerId) < 0;
+}
+export function applyDeclareBankrupt(state) {
+  const s = clone(state);
+  const p = currentPlayer(s);
+  if (!p) return s;
+  // eliberează proprietățile (la bancă), șterge clădirile/ipotecile
+  BOARD.forEach((sq, i) => {
+    if (s.ownership?.[i] === p.id) { delete s.ownership[i]; delete s.buildings[i]; delete s.mortgaged[i]; }
+  });
+  p.bankrupt = true; p.money = 0;
+  s.debt = null;
+  log(s, `💥 ${p.name} a dat FALIMENT și iese din joc.`);
+  checkWinner(s);
+  if (s.status === 'playing') advanceTurn(s);
+  return s;
+}
+
+export function checkWinner(s) {
+  const active = s.players.filter(p => !p.bankrupt);
+  const richest = (arr) => arr.slice().sort((a, b) => b.money - a.money)[0];
+  let winner = null;
+  if (active.length <= 1) winner = active[0] || null;
+  else if (s.mode === 'short') {
+    const comps = active.filter(p => p.role === 'competitor');
+    const monos = active.filter(p => p.role === 'monopolist');
+    if (monos.length === 0) winner = richest(comps);
+    else if (comps.length === 0) winner = richest(monos);
+  }
+  if (winner) { s.winnerId = winner.id; s.status = 'ended'; log(s, `🏆 ${winner.name} câștigă jocul!`); }
+}
+
+function advanceTurn(s) {
+  const active = s.players.filter(x => !x.bankrupt);
+  if (active.length === 0) return;
+  const curIdx = active.findIndex(x => x.id === s.turn);
+  const next = active[(curIdx + 1) % active.length];
+  s.turn = next?.id || null;
+  s.dice = null; s.doublesCount = 0;
+}
+
+// ---------- SCHIMB (proprietăți neconstruite + bani) ----------
+export function proposeTrade(state, { toId, giveProps = [], giveMoney = 0, getProps = [], getMoney = 0 }) {
+  const s = clone(state);
+  const fromId = s.turn;
+  // doar proprietăți neconstruite
+  const ok = [...giveProps, ...getProps].every(i => (s.buildings?.[i] || 0) === 0);
+  if (!ok || fromId === toId) return s;
+  s.pending = { type: 'trade', fromId, toId, giveProps, giveMoney: Math.max(0, giveMoney), getProps, getMoney: Math.max(0, getMoney) };
+  return s;
+}
+export function applyAcceptTrade(state) {
+  const s = clone(state);
+  const t = s.pending;
+  if (t?.type !== 'trade') return s;
+  const from = s.players.find(p => p.id === t.fromId);
+  const to = s.players.find(p => p.id === t.toId);
+  if (!from || !to) { s.pending = null; return s; }
+  t.giveProps.forEach(i => { if (s.ownership[i] === from.id) s.ownership[i] = to.id; });
+  t.getProps.forEach(i => { if (s.ownership[i] === to.id) s.ownership[i] = from.id; });
+  from.money += t.getMoney - t.giveMoney;
+  to.money += t.giveMoney - t.getMoney;
+  log(s, `🤝 Schimb acceptat între ${from.name} și ${to.name}.`);
+  s.pending = null;
+  return s;
+}
+export function applyDeclineTrade(state) {
+  const s = clone(state);
+  if (s.pending?.type === 'trade') { log(s, 'Schimb refuzat.'); s.pending = null; }
+  return s;
+}
+
+// ---------- LICITAȚIE (la refuzul cumpărării) ----------
+export function applyBid(state, playerId, amount) {
+  const s = clone(state);
+  const a = s.pending;
+  if (a?.type !== 'auction' || a.passed.includes(playerId)) return s;
+  const player = s.players.find(p => p.id === playerId);
+  if (!player || amount <= a.highBid || player.money < amount) return s;
+  a.highBid = amount; a.highBidderId = playerId;
+  log(s, `${player.name} licitează €${amount}.`);
+  return s;
+}
+export function applyPassAuction(state, playerId) {
+  const s = clone(state);
+  const a = s.pending;
+  if (a?.type !== 'auction' || a.passed.includes(playerId)) return s;
+  a.passed.push(playerId);
+  const eligible = s.players.filter(p => !p.bankrupt && !a.passed.includes(p.id));
+  // se termină când rămâne cel mult unul care nu a pasat
+  if (eligible.length <= 1) finalizeAuction(s);
+  return s;
+}
+function finalizeAuction(s) {
+  const a = s.pending;
+  if (a.highBidderId) {
+    const w = s.players.find(p => p.id === a.highBidderId);
+    w.money -= a.highBid; s.ownership[a.idx] = w.id;
+    log(s, `🔨 ${w.name} câștigă licitația pentru ${BOARD[a.idx].name} (€${a.highBid}).`);
+  } else {
+    log(s, `Nicio ofertă — ${BOARD[a.idx].name} rămâne la bancă.`);
+  }
+  s.pending = null;
 }
 
 // ---------- sfârșit tură ----------
 export function applyEndTurn(state) {
   const s = clone(state);
-  if (s.status !== 'playing' || s.pending) return s;
+  if (s.status !== 'playing' || s.pending || s.debt) return s;
   // dublă → același jucător mai joacă o dată (dacă nu e în închisoare)
   const p = currentPlayer(s);
   const rolledDouble = s.dice && s.dice[0] === s.dice[1] && !p?.inJail && s.doublesCount > 0;

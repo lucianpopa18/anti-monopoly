@@ -4,6 +4,8 @@ import {
   createGame, addPlayer, startGame, applyRoll, applyBuy, applyDeclineBuy,
   applyEndTurn, currentPlayer, ownerOf, computeRent, START_MONEY, LAND_START, PASS_START,
   applyBuild, canBuild, houseCost, buildableFor, applyPayIncomeTax, incomeTaxOptions,
+  applyMortgage, applyUnmortgage, applySellHouse, mustBankrupt, applyDeclareBankrupt,
+  proposeTrade, applyAcceptTrade, applyBid, applyPassAuction,
 } from '../src/game/engine.js';
 import { BOARD } from '../src/game/board.js';
 
@@ -73,10 +75,10 @@ test('aterizare fix pe START dă €200 (nu €100)', () => {
 test('trecere peste START dă €100', () => {
   let g = twoPlayerGame();
   const p = currentPlayer(g);
-  p.pos = 39; // Sintagma; +3 → idx 2, trece peste START
+  p.pos = 39; // Sintagma; +11 → idx 10 (vizită închisoare, neutru), trece peste START
   const before = p.money;
-  g = applyRoll(g, [2, 1]); // 3 pași
-  assert.equal(currentPlayer(g).pos, 2);
+  g = applyRoll(g, [6, 5]); // 11 pași
+  assert.equal(currentPlayer(g).pos, 10);
   assert.equal(currentPlayer(g).money, before + PASS_START);
 });
 
@@ -101,11 +103,12 @@ test('3 duble la rând trimit la închisoare', () => {
   assert.equal(g.players[0].pos, 10);
 });
 
-test('refuz cumpărare curăță pending', () => {
+test('refuz cumpărare pornește licitația', () => {
   let g = twoPlayerGame();
   g = applyRoll(g, [1, 0]);
   g = applyDeclineBuy(g);
-  assert.equal(g.pending, null);
+  assert.equal(g.pending?.type, 'auction');
+  assert.equal(g.pending.idx, 1);
   assert.equal(g.ownership[1], undefined);
 });
 
@@ -156,6 +159,90 @@ test('impozit pe venit: alegere fix €200 vs % din active', () => {
   g = applyPayIncomeTax(g, 'fixed');
   assert.equal(g.players[0].money, START_MONEY - 200);
   assert.equal(g.pending, null);
+});
+
+test('ipotecă: +½ preț, apoi răscumpărare la +10%', () => {
+  let g = twoPlayerGame();
+  const p = g.players[0];
+  g.ownership = { 1: p.id }; // Corso Imperiale (€60)
+  const before = g.players[0].money;
+  g = applyMortgage(g, 1);
+  assert.equal(g.mortgaged[1], true);
+  assert.equal(g.players[0].money, before + 30);
+  assert.equal(computeRent(g, 1), 0); // ipotecat = fără chirie
+  g = applyUnmortgage(g, 1);
+  assert.equal(g.mortgaged[1], undefined);
+  assert.equal(g.players[0].money, before + 30 - 33); // 30 - round(30*1.1)
+});
+
+test('vânzare casă: recuperezi jumătate din cost', () => {
+  let g = twoPlayerGame();
+  const p = g.players[0]; // competitor
+  g.ownership = { 6: p.id };
+  g = applyBuild(g, 6);
+  const cost = houseCost(6, 'competitor');
+  const beforeSell = g.players[0].money;
+  g = applySellHouse(g, 6);
+  assert.equal(g.buildings[6] || 0, 0);
+  assert.equal(g.players[0].money, beforeSell + Math.round(cost / 2));
+});
+
+test('faliment: dator peste tot ce poate strânge → declară + iese', () => {
+  let g = twoPlayerGame();
+  const p = g.players[0];
+  p.money = -50; // dator, fără proprietăți de ipotecat
+  g.debt = { playerId: p.id, amount: 50 };
+  assert.equal(mustBankrupt(g, p.id), true);
+  g = applyDeclareBankrupt(g);
+  assert.equal(g.players[0].bankrupt, true);
+});
+
+test('câștigător mod clasic: ultimul rămas', () => {
+  let g = twoPlayerGame(); // clasic implicit
+  const loser = g.players[0];
+  loser.money = -1000;
+  g.turn = loser.id;
+  g = applyDeclareBankrupt(g);
+  assert.equal(g.status, 'ended');
+  assert.equal(g.winnerId, g.players[1].id);
+});
+
+test('câștigător mod scurt: toți monopoliștii faliți → cel mai bogat competitor', () => {
+  let g = createGame({ code: 'S1', hostName: 'C1', hostRole: 'competitor', mode: 'short' });
+  g = addPlayer(g, 'C2', 'competitor');
+  g = addPlayer(g, 'M1', 'monopolist');
+  g = startGame(g, { firstPlayerId: g.players[2].id }); // rândul monopolistului
+  g.players[0].money = 900; g.players[1].money = 500;
+  g = applyDeclareBankrupt(g); // M1 iese
+  assert.equal(g.status, 'ended');
+  assert.equal(g.winnerId, g.players[0].id); // C1, cel mai bogat competitor
+});
+
+test('schimb: proprietăți + bani se transferă la acceptare', () => {
+  let g = twoPlayerGame();
+  const [a, b] = g.players;
+  g.ownership = { 1: a.id, 6: b.id };
+  g = proposeTrade(g, { toId: b.id, giveProps: [1], giveMoney: 0, getProps: [6], getMoney: 50 });
+  assert.equal(g.pending?.type, 'trade');
+  const aBefore = g.players[0].money, bBefore = g.players[1].money;
+  g = applyAcceptTrade(g);
+  assert.equal(g.ownership[1], b.id);
+  assert.equal(g.ownership[6], a.id);
+  assert.equal(g.players[0].money, aBefore + 50);
+  assert.equal(g.players[1].money, bBefore - 50);
+});
+
+test('licitație: refuzul pornește licitația, cel care nu pasează câștigă', () => {
+  let g = twoPlayerGame();
+  const [a, b] = g.players;
+  g = applyRoll(g, [1, 0]); // a pică pe idx 1 → pending buy
+  g = applyDeclineBuy(g);
+  assert.equal(g.pending?.type, 'auction');
+  g = applyBid(g, b.id, 40);
+  g = applyPassAuction(g, a.id); // a pasează → b câștigă
+  assert.equal(g.pending, null);
+  assert.equal(g.ownership[1], b.id);
+  assert.equal(g.players.find(x => x.id === b.id).money, START_MONEY - 40);
 });
 
 test('Fundația: Competitor cu zar 2 primește €50; Monopolist plătește €160', () => {

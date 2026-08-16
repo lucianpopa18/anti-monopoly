@@ -5,13 +5,45 @@ import {
   createGame, addPlayer, startGame, applyRoll, applyBuy, applyDeclineBuy,
   applyEndTurn, currentPlayer, ownerOf, rollDicePair,
   applyBuild, buildableFor, houseCost, applyPayIncomeTax, incomeTaxOptions,
+  canMortgage, applyMortgage, applyUnmortgage, applySellHouse,
+  mustBankrupt, applyDeclareBankrupt, proposeTrade, applyAcceptTrade, applyDeclineTrade,
+  applyBid, applyPassAuction,
 } from './game/engine.js';
 
 export default function App() {
   const [game, setGame] = useState(null);
   if (!game) return <Setup onStart={setGame} />;
   if (game.status === 'lobby') return <Lobby game={game} setGame={setGame} />;
+  if (game.status === 'ended') return <WinnerScreen game={game} onRestart={() => setGame(null)} />;
   return <Table game={game} setGame={setGame} />;
+}
+
+function WinnerScreen({ game, onRestart }) {
+  const w = game.players.find(p => p.id === game.winnerId);
+  return (
+    <div className="wrap">
+      <div style={{ textAlign: 'center', marginTop: 40 }}>
+        <div style={{ fontSize: 64 }}>🏆</div>
+        <div className="title" style={{ marginTop: 8 }}>{w?.name} câștigă!</div>
+        <div className="sub">{w?.role === 'competitor' ? '🟢 Competitor' : '🔵 Monopolist'} · {game.mode === 'short' ? 'mod Scurt' : 'mod Clasic'}</div>
+      </div>
+      <div className="panel">
+        <div style={{ fontWeight: 900, marginBottom: 10 }}>Clasament final</div>
+        <div className="plist">
+          {game.players.slice().sort((a, b) => (b.bankrupt ? -1 : b.money) - (a.bankrupt ? -1 : a.money)).map(p => (
+            <div className="pchip" key={p.id}>
+              <span className="dot" style={{ background: p.color }} />
+              <b>{p.name}</b>
+              <span style={{ marginLeft: 'auto', fontWeight: 800, color: p.bankrupt ? 'var(--tax)' : 'var(--ink)' }}>
+                {p.bankrupt ? '💥 faliment' : `€${p.money}`}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <button className="btn" style={{ width: '100%' }} onClick={onRestart}>Joc nou 🎲</button>
+    </div>
+  );
 }
 
 /* ---------------- SETUP (local hot-seat) ---------------- */
@@ -98,6 +130,7 @@ function Lobby({ game, setGame }) {
 function Table({ game, setGame }) {
   const [rolling, setRolling] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const me = currentPlayer(game);
 
   const roll = () => {
@@ -107,16 +140,20 @@ function Table({ game, setGame }) {
   };
   const buy = () => setGame(g => applyBuy(g));
   const decline = () => setGame(g => applyDeclineBuy(g));
-  const endTurn = () => { setBuildOpen(false); setGame(g => applyEndTurn(g)); };
+  const endTurn = () => { setBuildOpen(false); setManageOpen(false); setGame(g => applyEndTurn(g)); };
   const build = (idx) => setGame(g => applyBuild(g, idx));
   const payTax = (mode) => setGame(g => applyPayIncomeTax(g, mode));
 
   const pendingSq = game.pending?.type === 'buy' ? BOARD[game.pending.idx] : null;
   const taxPending = game.pending?.type === 'incometax';
+  const auction = game.pending?.type === 'auction' ? game.pending : null;
+  const trade = game.pending?.type === 'trade' ? game.pending : null;
+  const debt = game.debt || null;
   const taxOpts = taxPending ? incomeTaxOptions(game, me.id) : null;
-  const canRoll = !game.pending && !rolling;
+  const canRoll = !game.pending && !game.debt && !rolling;
   const rolledDouble = game.dice && game.dice[0] === game.dice[1] && !me?.inJail;
   const buildable = me ? buildableFor(game, me.id) : [];
+  const myProps = me ? BOARD.map((sq, i) => i).filter(i => game.ownership?.[i] === me.id) : [];
 
   return (
     <div className="wrap">
@@ -139,9 +176,26 @@ function Table({ game, setGame }) {
           </div>
         )}
 
+        {game.lastCard && !game.pending && (
+          <div className="cardBanner">
+            🃏 {game.lastCard.role === 'competitor' ? '🟢' : '🔵'} {game.lastCard.text}
+          </div>
+        )}
+
+        {debt && (
+          <div className="debtBanner">
+            <b>💸 {me.name} datorează €{debt.amount}.</b> Fă rost de bani (ipotecă / vinde case) sau declară faliment.
+            <button className="btn" style={{ width: '100%', marginTop: 8 }} onClick={() => setManageOpen(true)}>🏦 Gestionează</button>
+            {mustBankrupt(game, me.id) && (
+              <button className="btn ghost" style={{ width: '100%', marginTop: 6, color: 'var(--tax)', borderColor: 'var(--tax)' }}
+                onClick={() => setGame(g => applyDeclareBankrupt(g))}>💥 Declar faliment</button>
+            )}
+          </div>
+        )}
+
         {pendingSq ? (
           <div className="actions">
-            <button className="btn" onClick={buy}>Cumpără {pendingSq.name} · €{pendingSq.price}</button>
+            <button className="btn" onClick={buy} disabled={me.money < pendingSq.price}>Cumpără {pendingSq.name} · €{pendingSq.price}</button>
             <button className="btn ghost" onClick={decline}>Refuz</button>
           </div>
         ) : taxPending ? (
@@ -149,7 +203,11 @@ function Table({ game, setGame }) {
             <button className="btn" onClick={() => payTax('fixed')}>Fix · €{taxOpts.fixed}</button>
             <button className="btn ghost" onClick={() => payTax('percent')}>{taxOpts.pct}% active · €{taxOpts.percent}</button>
           </div>
-        ) : (
+        ) : auction ? (
+          <AuctionPanel game={game} setGame={setGame} auction={auction} />
+        ) : trade ? (
+          <TradePanel game={game} setGame={setGame} trade={trade} />
+        ) : debt ? null : (
           <>
             <div className="actions">
               <button className="btn" onClick={roll} disabled={!canRoll}>
@@ -157,11 +215,14 @@ function Table({ game, setGame }) {
               </button>
               {game.dice && <button className="btn ghost" onClick={endTurn}>{rolledDouble ? 'Continuă →' : 'Termină tura →'}</button>}
             </div>
-            {buildable.length > 0 && (
-              <button className="btn ghost" style={{ width: '100%', marginTop: 8 }} onClick={() => setBuildOpen(o => !o)}>
-                🏠 Construiește ({buildable.length}) {buildOpen ? '▲' : '▼'}
-              </button>
-            )}
+            <div className="actions" style={{ marginTop: 8 }}>
+              {buildable.length > 0 && (
+                <button className="btn ghost" onClick={() => { setBuildOpen(o => !o); setManageOpen(false); }}>
+                  🏠 Construiește ({buildable.length})
+                </button>
+              )}
+              <button className="btn ghost" onClick={() => { setManageOpen(o => !o); setBuildOpen(false); }}>🏦 Gestionează</button>
+            </div>
             {buildOpen && buildable.length > 0 && (
               <div className="panel" style={{ marginTop: 8, marginBottom: 0 }}>
                 <p className="sub" style={{ margin: '0 0 8px', textAlign: 'left' }}>
@@ -183,6 +244,8 @@ function Table({ game, setGame }) {
           </>
         )}
 
+        {manageOpen && <ManagePanel game={game} setGame={setGame} me={me} myProps={myProps} />}
+
         <div className="moneyList">
           {game.players.map(p => (
             <span key={p.id} className={`moneyChip ${p.id === game.turn ? 'turn' : ''}`}>
@@ -195,6 +258,155 @@ function Table({ game, setGame }) {
           {(game.log || []).slice(-14).reverse().map((l, i) => <div key={i}>{l.text}</div>)}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ---- Licitație ---- */
+function AuctionPanel({ game, setGame, auction }) {
+  const sq = BOARD[auction.idx];
+  const eligible = game.players.filter(p => !p.bankrupt && !auction.passed.includes(p.id));
+  const bid = (pid, amount) => setGame(g => applyBid(g, pid, amount));
+  const pass = (pid) => setGame(g => applyPassAuction(g, pid));
+  const high = auction.highBid;
+  return (
+    <div className="panel" style={{ marginBottom: 0 }}>
+      <div style={{ fontWeight: 900, marginBottom: 4 }}>🔨 Licitație: {sq.name}</div>
+      <p className="sub" style={{ textAlign: 'left', margin: '0 0 10px' }}>
+        Ofertă maximă: <b style={{ color: 'var(--ink)' }}>€{high}</b>
+        {auction.highBidderId && ` · ${game.players.find(p => p.id === auction.highBidderId)?.name}`}
+      </p>
+      <div className="plist">
+        {eligible.map(p => (
+          <div className="pchip" key={p.id}>
+            <span className="dot" style={{ background: p.color }} />
+            <b>{p.name}</b> <span style={{ color: 'var(--muted)', fontSize: 12 }}>€{p.money}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+              <button className="btn" style={{ minHeight: 36, padding: '0 10px', fontSize: 13 }}
+                disabled={p.money < high + 10} onClick={() => bid(p.id, high + 10)}>+€10</button>
+              <button className="btn" style={{ minHeight: 36, padding: '0 10px', fontSize: 13 }}
+                disabled={p.money < high + 50} onClick={() => bid(p.id, high + 50)}>+€50</button>
+              <button className="btn ghost" style={{ minHeight: 36, padding: '0 10px', fontSize: 13 }} onClick={() => pass(p.id)}>Pas</button>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---- Schimb: oferta primită ---- */
+function TradePanel({ game, setGame, trade }) {
+  const from = game.players.find(p => p.id === trade.fromId);
+  const to = game.players.find(p => p.id === trade.toId);
+  const names = (idxs) => idxs.map(i => BOARD[i].name).join(', ') || '—';
+  return (
+    <div className="panel" style={{ marginBottom: 0 }}>
+      <div style={{ fontWeight: 900, marginBottom: 6 }}>🤝 {from.name} propune un schimb lui {to.name}</div>
+      <div className="pchip" style={{ display: 'block' }}>
+        <div><b>{from.name}</b> dă: {names(trade.giveProps)}{trade.giveMoney ? ` + €${trade.giveMoney}` : ''}</div>
+        <div style={{ marginTop: 4 }}><b>{to.name}</b> dă: {names(trade.getProps)}{trade.getMoney ? ` + €${trade.getMoney}` : ''}</div>
+      </div>
+      <p className="sub" style={{ margin: '8px 0' }}>Decide {to.name}:</p>
+      <div className="actions">
+        <button className="btn" onClick={() => setGame(g => applyAcceptTrade(g))}>Accept</button>
+        <button className="btn ghost" onClick={() => setGame(g => applyDeclineTrade(g))}>Refuz</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Gestionare: ipotecă / vânzare case / propunere schimb ---- */
+function ManagePanel({ game, setGame, me, myProps }) {
+  const [tradeWith, setTradeWith] = useState(null);
+  const [give, setGive] = useState([]);
+  const [get, setGet] = useState([]);
+  const [giveMoney, setGiveMoney] = useState('');
+  const [getMoney, setGetMoney] = useState('');
+
+  const mortgage = (i) => setGame(g => applyMortgage(g, i));
+  const unmortgage = (i) => setGame(g => applyUnmortgage(g, i));
+  const sell = (i) => setGame(g => applySellHouse(g, i));
+
+  const others = game.players.filter(p => p.id !== me.id && !p.bankrupt);
+  const theirProps = tradeWith
+    ? BOARD.map((s, i) => i).filter(i => game.ownership?.[i] === tradeWith && (game.buildings?.[i] || 0) === 0)
+    : [];
+  const myTradeable = myProps.filter(i => (game.buildings?.[i] || 0) === 0);
+  const toggle = (arr, set, i) => set(arr.includes(i) ? arr.filter(x => x !== i) : [...arr, i]);
+  const propose = () => {
+    setGame(g => proposeTrade(g, {
+      toId: tradeWith, giveProps: give, getProps: get,
+      giveMoney: Number(giveMoney) || 0, getMoney: Number(getMoney) || 0,
+    }));
+  };
+
+  return (
+    <div className="panel" style={{ marginTop: 8, marginBottom: 0 }}>
+      <div style={{ fontWeight: 900, marginBottom: 8 }}>🏦 Proprietățile tale</div>
+      {myProps.length === 0 && <p className="sub" style={{ textAlign: 'left', margin: 0 }}>Nu deții încă proprietăți.</p>}
+      <div className="plist">
+        {myProps.map(i => {
+          const houses = game.buildings?.[i] || 0;
+          const mort = game.mortgaged?.[i];
+          return (
+            <div className="pchip" key={i}>
+              <span className="dot" style={{ background: (GROUPS[BOARD[i].group]?.color) || '#999' }} />
+              <b style={{ fontSize: 13 }}>{BOARD[i].name}</b>
+              {mort && <span style={{ color: 'var(--tax)', fontSize: 11, fontWeight: 800 }}>ipotecat</span>}
+              {houses > 0 && <span style={{ fontSize: 11 }}>{'🏠'.repeat(houses)}</span>}
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                {houses > 0 ? (
+                  <button className="miniBtn" onClick={() => sell(i)}>Vinde 🏠 +€{Math.round(houseCost(i, me.role) / 2)}</button>
+                ) : mort ? (
+                  <button className="miniBtn" onClick={() => unmortgage(i)}>Răscumpără −€{Math.round((BOARD[i].price / 2) * 1.1)}</button>
+                ) : canMortgage(game, i) ? (
+                  <button className="miniBtn" onClick={() => mortgage(i)}>Ipotecă +€{Math.round(BOARD[i].price / 2)}</button>
+                ) : null}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {others.length > 0 && !game.debt && (
+        <>
+          <div style={{ fontWeight: 900, margin: '14px 0 8px' }}>🤝 Propune un schimb</div>
+          <div className="rolePick" style={{ flexWrap: 'wrap' }}>
+            {others.map(p => (
+              <button key={p.id} className={`roleBtn ${tradeWith === p.id ? 'comp on' : ''}`}
+                style={{ flex: 'none', padding: '0 12px' }} onClick={() => { setTradeWith(p.id); setGive([]); setGet([]); }}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+          {tradeWith && (
+            <div style={{ marginTop: 10 }}>
+              <p className="sub" style={{ textAlign: 'left', margin: '0 0 4px' }}>Tu dai (fără case):</p>
+              <div className="chipRow">
+                {myTradeable.map(i => (
+                  <button key={i} className={`tchip ${give.includes(i) ? 'on' : ''}`} onClick={() => toggle(give, setGive, i)}>{BOARD[i].name}</button>
+                ))}
+                {myTradeable.length === 0 && <span className="sub" style={{ margin: 0 }}>—</span>}
+              </div>
+              <p className="sub" style={{ textAlign: 'left', margin: '8px 0 4px' }}>Tu ceri:</p>
+              <div className="chipRow">
+                {theirProps.map(i => (
+                  <button key={i} className={`tchip ${get.includes(i) ? 'on' : ''}`} onClick={() => toggle(get, setGet, i)}>{BOARD[i].name}</button>
+                ))}
+                {theirProps.length === 0 && <span className="sub" style={{ margin: 0 }}>—</span>}
+              </div>
+              <div className="row" style={{ marginTop: 8 }}>
+                <input className="field" placeholder="Bani dați €" inputMode="numeric" value={giveMoney} onChange={e => setGiveMoney(e.target.value)} />
+                <input className="field" placeholder="Bani ceruți €" inputMode="numeric" value={getMoney} onChange={e => setGetMoney(e.target.value)} />
+              </div>
+              <button className="btn" style={{ width: '100%', marginTop: 8 }}
+                disabled={give.length === 0 && get.length === 0 && !giveMoney && !getMoney}
+                onClick={propose}>Trimite propunerea</button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
