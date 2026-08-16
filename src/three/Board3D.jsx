@@ -245,79 +245,86 @@ function CenterPiece() {
   );
 }
 
-function CameraFollow({ game, controls }) {
-  useFrame(() => {
-    const p = game.players.find(x => x.id === game.turn);
-    if (!p || !controls.current || controls.current.enabled === false) return; // nu în timpul cinematic-ului
-    const { x, z } = pos3(p.pos);
-    const t = controls.current.target;
-    t.x += (x * 0.32 - t.x) * 0.03; // urmărire lină, parțială
-    t.z += (z * 0.32 - t.z) * 0.03;
-  });
-  return null;
-}
-
-// Regizor cinematic: 1) picaj spre zaruri, 2) urmărește pionul care sare, 3) revine.
+// Vederea „ideală" a unui pion: camera pe LATURA lui, privind peste tablă,
+// astfel încât pionul activ e cel mai aproape de cameră (latura lui în față).
 const easeCubic = (t) => 1 - Math.pow(1 - t, 3);
 const CHASE_OFFSET = new THREE.Vector3(3.5, 5.2, 7);
-function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving }) {
+function idealView(tile) {
+  const { x, z } = pos3(tile);
+  const len = Math.hypot(x, z) || 1;
+  const dx = x / len, dz = z / len;
+  const DIST = 27, HEIGHT = 16;
+  return { pos: new THREE.Vector3(dx * DIST, HEIGHT, dz * DIST), tgt: new THREE.Vector3(x * 0.12, 0, z * 0.12) };
+}
+
+// Regizor: init pe jucătorul curent · aruncare (picaj zaruri → urmărire pion) →
+// se așază pe latura pionului · la schimbarea turei, glisează spre noul jucător.
+function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTile, turnId }) {
   const { camera } = useThree();
+  const P = useRef({ activeTile, turnId });
+  P.current.activeTile = activeTile; P.current.turnId = turnId;
   const st = useRef({
-    nonce: rollNonce, phase: 'idle', start: -1, trackStart: -1, outStart: -1,
-    home: new THREE.Vector3(), homeTarget: new THREE.Vector3(),
-    outFromPos: new THREE.Vector3(), outFromTgt: new THREE.Vector3(),
+    nonce: rollNonce, turn: turnId, phase: 'init', t0: 0, trackT0: 0, moveT0: 0,
+    fromPos: new THREE.Vector3(), fromTgt: new THREE.Vector3(), toPos: new THREE.Vector3(), toTgt: new THREE.Vector3(),
   });
 
+  // trigger: aruncare
   if (rollNonce !== st.current.nonce) {
     st.current.nonce = rollNonce;
-    const idle = st.current.phase === 'idle';
-    if (idle) {
-      st.current.home.copy(camera.position);
-      if (controls.current) st.current.homeTarget.copy(controls.current.target);
-    }
-    st.current.phase = 'dice';
-    st.current.start = performance.now();
-    if (controls.current) controls.current.enabled = false;
+    st.current.phase = 'dice'; st.current.t0 = performance.now();
+    st.current.fromPos.copy(camera.position);
+    if (controls.current) { st.current.fromTgt.copy(controls.current.target); controls.current.enabled = false; }
+  }
+  // trigger: schimbare tură (doar dacă nu suntem în mijlocul unei aruncări)
+  if (turnId !== st.current.turn) {
+    st.current.turn = turnId;
+    if (st.current.phase === 'idle' || st.current.phase === 'init') st.current.phase = 'startMove';
   }
 
   useFrame(() => {
-    const s = st.current;
-    if (s.phase === 'idle') return;
-    const now = performance.now();
-    const closePos = new THREE.Vector3(2.6, 2.8, 8.6);
-    const closeTgt = new THREE.Vector3(0, 0.6, 3.2);
+    const s = st.current, now = performance.now();
     const tgt = controls.current ? controls.current.target : new THREE.Vector3();
 
+    if (s.phase === 'init') {
+      const v = idealView(P.current.activeTile);
+      camera.position.copy(v.pos); tgt.copy(v.tgt); camera.lookAt(tgt);
+      if (controls.current) { controls.current.enabled = true; controls.current.update?.(); }
+      s.phase = 'idle'; return;
+    }
+    if (s.phase === 'idle') return;
+
     if (s.phase === 'dice') {
-      const el = now - s.start;
-      const IN = 340, HOLD_END = 1150;
-      if (el < IN) { const t = easeCubic(el / IN); camera.position.copy(s.home).lerp(closePos, t); tgt.copy(s.homeTarget).lerp(closeTgt, t); }
+      const el = now - s.t0, IN = 340, HOLD_END = 1150;
+      const closePos = new THREE.Vector3(2.6, 2.8, 8.6), closeTgt = new THREE.Vector3(0, 0.6, 3.2);
+      if (el < IN) { const t = easeCubic(el / IN); camera.position.copy(s.fromPos).lerp(closePos, t); tgt.copy(s.fromTgt).lerp(closeTgt, t); }
       else if (el < HOLD_END) { camera.position.copy(closePos); tgt.copy(closeTgt); }
-      else { s.phase = 'track'; s.trackStart = now; }
-      camera.lookAt(tgt);
-      return;
+      else { s.phase = 'track'; s.trackT0 = now; }
+      camera.lookAt(tgt); return;
     }
 
     if (s.phase === 'track') {
-      // urmărire lină a pionului activ
       const p = pawnPos.current;
-      const want = p.clone().add(CHASE_OFFSET);
-      camera.position.lerp(want, 0.09);
-      tgt.lerp(p, 0.14);
-      camera.lookAt(tgt);
-      const trackEl = now - s.trackStart;
-      if (!pawnMoving.current && trackEl > 500) {
-        s.phase = 'out'; s.outStart = now; s.outFromPos.copy(camera.position); s.outFromTgt.copy(tgt);
-      }
+      camera.position.lerp(p.clone().add(CHASE_OFFSET), 0.09);
+      tgt.lerp(p, 0.14); camera.lookAt(tgt);
+      if (!pawnMoving.current && now - s.trackT0 > 500) s.phase = 'startMove';
       return;
     }
 
-    if (s.phase === 'out') {
-      const t = easeCubic(Math.min(1, (now - s.outStart) / 800));
-      camera.position.copy(s.outFromPos).lerp(s.home, t);
-      tgt.copy(s.outFromTgt).lerp(s.homeTarget, t);
+    if (s.phase === 'startMove') {
+      const v = idealView(P.current.activeTile);
+      s.fromPos.copy(camera.position); s.fromTgt.copy(tgt);
+      s.toPos.copy(v.pos); s.toTgt.copy(v.tgt);
+      s.moveT0 = now; s.phase = 'move';
+      if (controls.current) controls.current.enabled = false;
+      return;
+    }
+
+    if (s.phase === 'move') {
+      const t = easeCubic(Math.min(1, (now - s.moveT0) / 850));
+      camera.position.copy(s.fromPos).lerp(s.toPos, t);
+      tgt.copy(s.fromTgt).lerp(s.toTgt, t);
       camera.lookAt(tgt);
-      if (t >= 1) { camera.position.copy(s.home); tgt.copy(s.homeTarget); if (controls.current) controls.current.enabled = true; s.phase = 'idle'; }
+      if (t >= 1) { camera.position.copy(s.toPos); tgt.copy(s.toTgt); if (controls.current) { controls.current.enabled = true; controls.current.update?.(); } s.phase = 'idle'; }
     }
   });
   return null;
@@ -341,8 +348,8 @@ export default function Board3D({ game, dice, rollNonce }) {
         <PerspectiveCamera makeDefault position={[0, 20, 26]} fov={42} />
         <OrbitControls ref={controls} target={[0, 0, 0]} enablePan={false} minDistance={10} maxDistance={60}
           maxPolarAngle={1.4} minPolarAngle={0.15} enableDamping dampingFactor={0.08} />
-        <CameraFollow game={game} controls={controls} />
-        <CinematicDirector rollNonce={rollNonce} controls={controls} pawnPos={pawnPos} pawnMoving={pawnMoving} />
+        <CinematicDirector rollNonce={rollNonce} controls={controls} pawnPos={pawnPos} pawnMoving={pawnMoving}
+          activeTile={game.players.find(p => p.id === game.turn)?.pos ?? 0} turnId={game.turn} />
         <Dice3D dice={dice} rollNonce={rollNonce} />
         <ambientLight intensity={0.7} />
         <directionalLight position={[10, 22, 12]} intensity={1.4} castShadow
