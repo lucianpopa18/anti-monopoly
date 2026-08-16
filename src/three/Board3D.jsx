@@ -383,8 +383,9 @@ function idealView(tile, immersive) {
   const dx = x / len, dz = z / len;
   // În full screen ținta e mult mai aproape de pion (și puțin mai sus), ca pionul
   // să apară în partea de sus a ecranului, deasupra barei de controale.
-  const DIST = immersive ? 23 : 27, HEIGHT = immersive ? 14 : 16;
-  const bias = immersive ? 0.72 : 0.12, ty = immersive ? 0.5 : 0;
+  const DIST = immersive ? 20 : 27, HEIGHT = immersive ? 13 : 16;
+  // bias > 1 = ținta dincolo de pion → pionul + căsuța lui apar în partea de SUS a ecranului
+  const bias = immersive ? 1.05 : 0.12, ty = immersive ? 0.7 : 0;
   return { pos: new THREE.Vector3(dx * DIST, HEIGHT, dz * DIST), tgt: new THREE.Vector3(x * bias, ty, z * bias) };
 }
 

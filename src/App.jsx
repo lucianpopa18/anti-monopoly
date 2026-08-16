@@ -165,6 +165,10 @@ function Table({ game, setGame }) {
     document.addEventListener('fullscreenchange', onFs);
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
+  useEffect(() => {
+    document.body.classList.toggle('immersive-lock', immersive);
+    return () => document.body.classList.remove('immersive-lock');
+  }, [immersive]);
 
   const [muted, setMuted] = useState(false);
   const toggleMute = () => { const m = !muted; setMuted(m); sfx.setMuted(m); };

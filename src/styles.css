@@ -53,7 +53,9 @@ button { font-family: inherit; cursor: pointer; }
   box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
 
 /* Mod ecran complet / imersiv — controale integrate ca HUD de joc (întunecat, auriu) */
-.wrap.game.immersive { position: fixed; inset: 0; z-index: 100; max-width: none; margin: 0; padding: 0; overflow: hidden; background: #9CC9EC; }
+body.immersive-lock { overflow: hidden; overscroll-behavior: none; background: #0E3A2A; }
+.wrap.game.immersive { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; height: 100dvh;
+  z-index: 100; max-width: none; margin: 0; padding: 0; overflow: hidden; background: #0E3A2A; }
 .wrap.game.immersive .canvas3d { position: absolute; inset: 0; width: 100%; height: 100%; border: none; border-radius: 0; box-shadow: none; }
 .wrap.game.immersive .topBtns { top: calc(10px + env(safe-area-inset-top)); }
 .wrap.game.immersive .fsBtn { background: rgba(14,32,22,0.6); color: #F3EFE6; border-color: rgba(255,255,255,0.18); backdrop-filter: blur(4px); }
