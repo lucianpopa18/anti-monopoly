@@ -20,8 +20,8 @@ function textRotY(index) {
   const { side } = gridPos(index);
   if (side === 'bottom') return 0;
   if (side === 'top') return Math.PI;
-  if (side === 'left') return Math.PI / 2;
-  return -Math.PI / 2; // right
+  if (side === 'left') return -Math.PI / 2; // citibil din exterior (stânga)
+  return Math.PI / 2; // right — citibil din exterior
 }
 
 function Tile({ i, game }) {
