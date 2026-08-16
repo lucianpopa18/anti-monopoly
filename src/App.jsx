@@ -171,6 +171,7 @@ function Board({ game }) {
     const owner = ownerOf(game, i);
     const tokens = game.players.filter(p => p.pos === i && !p.bankrupt);
     const groupColor = sq.type === 'property' ? GROUPS[sq.group]?.color : null;
+    const icon = squareIcon(sq);
 
     cells.push(
       <div key={i} className={`cell ${isCorner(i) ? 'corner' : ''}`} style={{ gridRow: row, gridColumn: col }}>
@@ -179,11 +180,8 @@ function Board({ game }) {
         ) : (
           <>
             {groupColor && <div className="bar" style={{ background: groupColor }} />}
-            {sq.type === 'transport' && <div className="bar" style={{ background: '#7A8B99' }} />}
-            {sq.type === 'utility' && <div className="bar" style={{ background: '#B9A06B' }} />}
-            {sq.type === 'card' && <div className="bar" style={{ background: '#4b5563' }} />}
-            {sq.type === 'tax' && <div className="bar" style={{ background: '#8a3b3b' }} />}
-            <div className="cn">{shortName(sq)}</div>
+            <div className="cn">{sq.name}</div>
+            {icon && <div className="ic">{icon}</div>}
             {'price' in sq && <div className="cp">€{sq.price}</div>}
             {owner && <span className="ownDot" style={{ background: owner.color }} />}
           </>
@@ -199,20 +197,59 @@ function Board({ game }) {
   return (
     <div className="board">
       {cells}
-      <div className="center"><div className="centerInner"><div className="brand">ANTI<small>MONOPOLY</small></div></div></div>
+      <div className="center">
+        <Skyline />
+        <div className="logo">
+          <div className="lo1">ANTI</div>
+          <div className="lo2">MONOPOLY</div>
+          <div className="lo3">Afaceri imobiliare · Jocul secolului 21</div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function shortName(sq) {
-  if (sq.type === 'card') return 'Cărți';
-  if (sq.type === 'tax') return sq.name;
-  return sq.name;
+function Skyline() {
+  return (
+    <svg className="skyline" viewBox="0 0 300 70" preserveAspectRatio="none" aria-hidden="true">
+      <g fill="#16181A">
+        <rect x="6" y="40" width="16" height="30" />
+        <rect x="26" y="28" width="12" height="42" />
+        <rect x="42" y="46" width="18" height="24" />
+        <rect x="64" y="20" width="14" height="50" />
+        <polygon points="71,20 71,8 78,20" />
+        <rect x="82" y="36" width="20" height="34" />
+        <rect x="106" y="26" width="12" height="44" />
+        <rect x="122" y="14" width="16" height="56" />
+        <rect x="128" y="6" width="4" height="10" />
+        <rect x="142" y="44" width="20" height="26" />
+        <rect x="166" y="30" width="14" height="40" />
+        <rect x="184" y="18" width="16" height="52" />
+        <rect x="204" y="40" width="18" height="30" />
+        <rect x="226" y="24" width="12" height="46" />
+        <rect x="242" y="34" width="20" height="36" />
+        <rect x="266" y="12" width="14" height="58" />
+        <rect x="272" y="4" width="3" height="9" />
+        <rect x="284" y="42" width="12" height="28" />
+      </g>
+    </svg>
+  );
+}
+
+const TRANSPORT_ICON = {
+  'Transport Aerian': '✈️', 'Transport Feroviar': '🚆', 'Transport Maritim': '🚢', 'Transport Rutier': '🚌',
+};
+function squareIcon(sq) {
+  if (sq.type === 'transport') return TRANSPORT_ICON[sq.name] || '🚆';
+  if (sq.type === 'utility') return sq.name.includes('Electric') ? '⚡' : '🔥';
+  if (sq.type === 'card') return '🃏';
+  if (sq.type === 'tax') return '💶';
+  return null;
 }
 function cornerLabel(sq) {
-  if (sq.kind === 'start') return 'START →';
-  if (sq.kind === 'jail') return '🔒 Închisoare';
-  if (sq.kind === 'fundatia') return 'Fundația';
-  if (sq.kind === 'gotojail') return 'La Închisoare';
+  if (sq.kind === 'start') return <><span className="big">↩</span>START</>;
+  if (sq.kind === 'jail') return <><span className="big">🔒</span>Închisoare</>;
+  if (sq.kind === 'fundatia') return <><span className="big">🏛️</span>Fundația</>;
+  if (sq.kind === 'gotojail') return <><span className="big">👮</span>La Închisoare</>;
   return sq.name;
 }
