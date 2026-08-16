@@ -10,6 +10,19 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['apple-touch-icon.png'],
+      workbox: {
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+        // Pagina se ia mereu proaspătă din rețea (cu rezervă din cache offline),
+        // ca update-urile să apară imediat, fără să golești cache-ul manual.
+        navigateFallback: null,
+        runtimeCaching: [{
+          urlPattern: ({ request }) => request.mode === 'navigate',
+          handler: 'NetworkFirst',
+          options: { cacheName: 'html-pages', networkTimeoutSeconds: 3 },
+        }],
+      },
       manifest: {
         name: 'Anti-Monopoly',
         short_name: 'Anti-Monopoly',
