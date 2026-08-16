@@ -191,7 +191,7 @@ function Die({ value, rollNonce, turnId, home }) {
   if (rollNonce !== st.current.nonce) {
     st.current.nonce = rollNonce; st.current.phase = 'rolling'; st.current.start = performance.now();
     st.current.axis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
-    st.current.spins = 6 + Math.floor(Math.random() * 4);
+    st.current.spins = 6 + Math.random() * 4; // fracționar → orientare de start aleatorie (nu pornește pe valoare)
     // aterizare pe ZONE separate (stânga/dreapta) ca cele două zaruri să nu se suprapună
     const zoneX = home[0] < 0 ? -2.4 : 2.4;
     const lx = zoneX + (Math.random() - 0.5) * 2, lz = (Math.random() - 0.5) * 3.6;
@@ -217,7 +217,8 @@ function Die({ value, rollNonce, turnId, home }) {
       // mai lent și mai fin: ~1.5s, rostogolire lină + 2-3 sărituri care se sting
       const T = Math.min(1, (performance.now() - s.start) / 1500);
       const ease = 1 - Math.pow(1 - T, 2.4);          // deplasare orizontală lină
-      const tumble = new THREE.Quaternion().setFromAxisAngle(s.axis, (1 - Math.pow(T, 1.6)) * s.spins * Math.PI * 2);
+      // rotație NATURALĂ: rapidă la început, încetinește lin până se oprește (frecare) — (1-T)^2.4
+      const tumble = new THREE.Quaternion().setFromAxisAngle(s.axis, Math.pow(1 - T, 2.4) * s.spins * Math.PI * 2);
       m.quaternion.copy(tgt).premultiply(tumble);
       const ox = s.from.x + (s.land.x - s.from.x) * ease, oz = s.from.z + (s.land.z - s.from.z) * ease;
       const bounce = Math.abs(Math.sin(T * Math.PI * 2.4)) * Math.pow(1 - T, 1.4) * 1.9; // sărituri mai blânde
