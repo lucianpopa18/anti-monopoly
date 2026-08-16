@@ -191,10 +191,12 @@ function Die({ value, rollNonce, turnId, home }) {
   if (rollNonce !== st.current.nonce) {
     st.current.nonce = rollNonce; st.current.phase = 'rolling'; st.current.start = performance.now();
     st.current.axis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
-    st.current.spins = 5 + Math.floor(Math.random() * 4);
-    const lx = (Math.random() - 0.5) * 8, lz = (Math.random() - 0.5) * 8;
+    st.current.spins = 6 + Math.floor(Math.random() * 4);
+    // aterizare pe ZONE separate (stânga/dreapta) ca cele două zaruri să nu se suprapună
+    const zoneX = home[0] < 0 ? -2.4 : 2.4;
+    const lx = zoneX + (Math.random() - 0.5) * 2, lz = (Math.random() - 0.5) * 3.6;
     st.current.land.set(lx, home[1], lz);
-    st.current.from.set(lx + (Math.random() - 0.5) * 2, home[1] + 5, lz + 3.5);
+    st.current.from.set(lx + (Math.random() - 0.5) * 1.5, home[1] + 6, lz + 4);
   }
   // schimbare tură → zarurile revin la mijloc (acasă)
   if (turnId !== st.current.turn) {
@@ -212,12 +214,14 @@ function Die({ value, rollNonce, turnId, home }) {
     if (s.phase === 'idle') { m.position.set(home[0], home[1], home[2]); m.quaternion.copy(tgt); return; }
 
     if (s.phase === 'rolling') {
-      const T = Math.min(1, (performance.now() - s.start) / 1150), ease = 1 - Math.pow(1 - T, 3);
-      const tumble = new THREE.Quaternion().setFromAxisAngle(s.axis, (1 - ease) * s.spins * Math.PI * 2);
+      // mai lent și mai fin: ~1.5s, rostogolire lină + 2-3 sărituri care se sting
+      const T = Math.min(1, (performance.now() - s.start) / 1500);
+      const ease = 1 - Math.pow(1 - T, 2.4);          // deplasare orizontală lină
+      const tumble = new THREE.Quaternion().setFromAxisAngle(s.axis, (1 - Math.pow(T, 1.6)) * s.spins * Math.PI * 2);
       m.quaternion.copy(tgt).premultiply(tumble);
       const ox = s.from.x + (s.land.x - s.from.x) * ease, oz = s.from.z + (s.land.z - s.from.z) * ease;
-      const bounce = Math.abs(Math.sin(T * Math.PI * 3)) * (1 - T) * 2.2;
-      const drop = s.from.y + (s.land.y - s.from.y) * ease;
+      const bounce = Math.abs(Math.sin(T * Math.PI * 2.4)) * Math.pow(1 - T, 1.4) * 1.9; // sărituri mai blânde
+      const drop = s.from.y + (s.land.y - s.from.y) * (1 - Math.pow(1 - T, 3)); // cădere accelerată (gravitație)
       m.position.set(ox, Math.max(s.land.y, drop) + bounce, oz);
       if (T >= 1) { s.phase = 'rest'; m.position.copy(s.land); }
       return;
@@ -454,8 +458,9 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
     }
 
     if (s.phase === 'dice') {
-      const el = now - s.t0, IN = 340, HOLD_END = 1150;
-      const closePos = new THREE.Vector3(3, 7.5, 15), closeTgt = new THREE.Vector3(0, 0.4, 0);
+      // intră lin spre zaruri, apoi ȚINE pe ele (reveal) până se vede clar rezultatul
+      const el = now - s.t0, IN = 420, HOLD_END = 2350;
+      const closePos = new THREE.Vector3(2, 5.5, 12), closeTgt = new THREE.Vector3(0, 0.5, 0);
       if (el < IN) { const t = easeCubic(el / IN); camera.position.copy(s.fromPos).lerp(closePos, t); tgt.copy(s.fromTgt).lerp(closeTgt, t); }
       else if (el < HOLD_END) { camera.position.copy(closePos); tgt.copy(closeTgt); }
       else { s.phase = 'track'; s.trackT0 = now; }
