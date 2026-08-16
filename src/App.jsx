@@ -204,7 +204,7 @@ function Table({ game, setGame }) {
         <button className="fsBtn" onClick={toggleImmersive} aria-label={immersive ? 'Ieși din ecran complet' : 'Ecran complet'}>{immersive ? '✕' : '⛶'}</button>
       </div>
       <Suspense fallback={<div className="canvas3d" style={{ display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Se încarcă tabla 3D…</div>}>
-        <Board3D game={game} dice={shownDice ?? game.dice} rollNonce={rollNonce} />
+        <Board3D game={game} dice={shownDice ?? game.dice} rollNonce={rollNonce} immersive={immersive} />
       </Suspense>
 
       <div className="hud">

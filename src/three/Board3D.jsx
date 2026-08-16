@@ -377,20 +377,23 @@ function Ground() {
 // astfel încât pionul activ e cel mai aproape de cameră (latura lui în față).
 const easeCubic = (t) => 1 - Math.pow(1 - t, 3);
 const CHASE_OFFSET = new THREE.Vector3(3.5, 5.2, 7);
-function idealView(tile) {
+function idealView(tile, immersive) {
   const { x, z } = pos3(tile);
   const len = Math.hypot(x, z) || 1;
   const dx = x / len, dz = z / len;
-  const DIST = 27, HEIGHT = 16;
-  return { pos: new THREE.Vector3(dx * DIST, HEIGHT, dz * DIST), tgt: new THREE.Vector3(x * 0.12, 0, z * 0.12) };
+  // În full screen ținta e mult mai aproape de pion (și puțin mai sus), ca pionul
+  // să apară în partea de sus a ecranului, deasupra barei de controale.
+  const DIST = immersive ? 23 : 27, HEIGHT = immersive ? 14 : 16;
+  const bias = immersive ? 0.72 : 0.12, ty = immersive ? 0.5 : 0;
+  return { pos: new THREE.Vector3(dx * DIST, HEIGHT, dz * DIST), tgt: new THREE.Vector3(x * bias, ty, z * bias) };
 }
 
 // Regizor: init pe jucătorul curent · aruncare (picaj zaruri → urmărire pion) →
 // se așază pe latura pionului · la schimbarea turei, glisează spre noul jucător.
-function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTile, turnId }) {
+function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTile, turnId, immersive }) {
   const { camera } = useThree();
-  const P = useRef({ activeTile, turnId });
-  P.current.activeTile = activeTile; P.current.turnId = turnId;
+  const P = useRef({ activeTile, turnId, immersive });
+  P.current.activeTile = activeTile; P.current.turnId = turnId; P.current.immersive = immersive;
   const st = useRef({
     nonce: rollNonce, turn: turnId, phase: 'init', t0: 0, trackT0: 0, moveT0: 0,
     fromPos: new THREE.Vector3(), fromTgt: new THREE.Vector3(), toPos: new THREE.Vector3(), toTgt: new THREE.Vector3(),
@@ -414,7 +417,7 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
     const tgt = controls.current ? controls.current.target : new THREE.Vector3();
 
     if (s.phase === 'init') {
-      const v = idealView(P.current.activeTile);
+      const v = idealView(P.current.activeTile, P.current.immersive);
       camera.position.copy(v.pos); tgt.copy(v.tgt); camera.lookAt(tgt);
       if (controls.current) { controls.current.enabled = true; controls.current.update?.(); }
       s.phase = 'idle'; return;
@@ -439,7 +442,7 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
     }
 
     if (s.phase === 'startMove') {
-      const v = idealView(P.current.activeTile);
+      const v = idealView(P.current.activeTile, P.current.immersive);
       s.fromPos.copy(camera.position); s.fromTgt.copy(tgt);
       s.toPos.copy(v.pos); s.toTgt.copy(v.tgt);
       s.moveT0 = now; s.phase = 'move';
