@@ -84,7 +84,12 @@ body.immersive-lock { overflow: hidden; overscroll-behavior: none; background: #
 .wrap.game.immersive .log { display: none; } /* jurnalul e ascuns în imersiv */
 /* bannere + panouri → compacte, la dreapta, deasupra butoanelor */
 .wrap.game.immersive .cardBanner, .wrap.game.immersive .debtBanner { max-width: min(360px, 88vw); backdrop-filter: blur(6px); }
-.wrap.game.immersive .panel { max-width: min(340px, 90vw); }
+/* panourile (Construiește/Gestionează) = casetă mărginită, cu scroll intern, sub butoanele de sus */
+.wrap.game.immersive .panel { width: min(360px, 92vw); max-width: min(360px, 92vw);
+  max-height: min(56vh, calc(100dvh - env(safe-area-inset-top, 0px) - 150px));
+  overflow-y: auto; -webkit-overflow-scrolling: touch; backdrop-filter: blur(6px); }
+/* întreg HUD-ul nu depășește ecranul (lasă loc sus pentru butoane) */
+.wrap.game.immersive .hud { max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 60px); overflow: visible; }
 /* panouri (construiește / gestionează / licitație / schimb) în ton întunecat */
 .wrap.game.immersive .panel { background: rgba(18,38,26,0.95); border: 1px solid rgba(255,255,255,0.12); box-shadow: none; }
 .wrap.game.immersive .panel .sub { color: #A8C3B4; }
