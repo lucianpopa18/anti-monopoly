@@ -388,7 +388,8 @@ export default function Board3D({ game, dice, rollNonce }) {
   return (
     <div className="canvas3d">
       <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }}>
-        <color attach="background" args={['#E7E6E1']} />
+        <color attach="background" args={['#0B2E1E']} />
+        <fog attach="fog" args={['#0B2E1E', 34, 95]} />
         <PerspectiveCamera makeDefault position={[0, 20, 26]} fov={42} />
         <OrbitControls ref={controls} target={[0, 0, 0]} enablePan={false} minDistance={10} maxDistance={60}
           maxPolarAngle={1.4} minPolarAngle={0.15} enableDamping dampingFactor={0.08} />
@@ -399,6 +400,17 @@ export default function Board3D({ game, dice, rollNonce }) {
         <directionalLight position={[10, 22, 12]} intensity={1.4} castShadow
           shadow-mapSize-width={1024} shadow-mapSize-height={1024}
           shadow-camera-left={-20} shadow-camera-right={20} shadow-camera-top={20} shadow-camera-bottom={-20} />
+
+        {/* masă de pâslă verde, sub și în jurul tablei */}
+        <mesh position={[0, -0.26, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[70, 70]} />
+          <meshStandardMaterial color="#15683F" roughness={0.98} metalness={0} />
+        </mesh>
+        {/* margine mai închisă în jurul tablei (efect de „ramă" pe masă) */}
+        <mesh position={[0, -0.25, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[TILE * 12.6, TILE * 12.6]} />
+          <meshStandardMaterial color="#0F5433" roughness={0.98} />
+        </mesh>
 
         {/* suprafața centrală deschisă (sub blaturile căsuțelor) */}
         <mesh position={[0, -0.18, 0]} receiveShadow>
