@@ -377,6 +377,17 @@ function Ground() {
 // astfel încât pionul activ e cel mai aproape de cameră (latura lui în față).
 const easeCubic = (t) => 1 - Math.pow(1 - t, 3);
 const CHASE_OFFSET = new THREE.Vector3(3.5, 5.2, 7);
+const ORBIT_SPEED = 0.09; // rad/s — orbită lentă continuă în full screen (cinematic „viu")
+
+// memorează parametrii unei orbite line în jurul țintei (folosit în idle, full screen)
+function setupOrbit(s, camera, tgt) {
+  s.orbitTgt.copy(tgt);
+  const dx = camera.position.x - tgt.x, dz = camera.position.z - tgt.z;
+  s.radius = Math.hypot(dx, dz);
+  s.camY = camera.position.y;
+  s.baseAngle = Math.atan2(dz, dx);
+  s.idleT0 = performance.now();
+}
 function idealView(tile, immersive) {
   const { x, z } = pos3(tile);
   const len = Math.hypot(x, z) || 1;
@@ -398,6 +409,7 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
   const st = useRef({
     nonce: rollNonce, turn: turnId, phase: 'init', t0: 0, trackT0: 0, moveT0: 0,
     fromPos: new THREE.Vector3(), fromTgt: new THREE.Vector3(), toPos: new THREE.Vector3(), toTgt: new THREE.Vector3(),
+    orbitTgt: new THREE.Vector3(), radius: 18, camY: 12, baseAngle: 0, idleT0: 0, orbitImmersive: false,
   });
 
   // trigger: aruncare
@@ -420,10 +432,26 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
     if (s.phase === 'init') {
       const v = idealView(P.current.activeTile, P.current.immersive);
       camera.position.copy(v.pos); tgt.copy(v.tgt); camera.lookAt(tgt);
-      if (controls.current) { controls.current.enabled = true; controls.current.update?.(); }
+      if (P.current.immersive) { setupOrbit(s, camera, tgt); if (controls.current) controls.current.enabled = false; }
+      else if (controls.current) { controls.current.enabled = true; controls.current.update?.(); }
+      s.orbitImmersive = P.current.immersive;
       s.phase = 'idle'; return;
     }
-    if (s.phase === 'idle') return;
+    if (s.phase === 'idle') {
+      // dacă s-a schimbat modul cât timp eram în idle, reconfigurează
+      if (P.current.immersive !== s.orbitImmersive) {
+        if (P.current.immersive) { setupOrbit(s, camera, tgt); if (controls.current) controls.current.enabled = false; }
+        else if (controls.current) { controls.current.enabled = true; controls.current.update?.(); }
+        s.orbitImmersive = P.current.immersive;
+      }
+      // full screen: orbită lentă continuă în jurul pionului („cinematic incontinuu")
+      if (P.current.immersive) {
+        const ang = s.baseAngle + ((now - s.idleT0) / 1000) * ORBIT_SPEED;
+        camera.position.set(s.orbitTgt.x + Math.cos(ang) * s.radius, s.camY, s.orbitTgt.z + Math.sin(ang) * s.radius);
+        camera.lookAt(s.orbitTgt);
+      }
+      return;
+    }
 
     if (s.phase === 'dice') {
       const el = now - s.t0, IN = 340, HOLD_END = 1150;
@@ -456,7 +484,13 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
       camera.position.copy(s.fromPos).lerp(s.toPos, t);
       tgt.copy(s.fromTgt).lerp(s.toTgt, t);
       camera.lookAt(tgt);
-      if (t >= 1) { camera.position.copy(s.toPos); tgt.copy(s.toTgt); if (controls.current) { controls.current.enabled = true; controls.current.update?.(); } s.phase = 'idle'; }
+      if (t >= 1) {
+        camera.position.copy(s.toPos); tgt.copy(s.toTgt);
+        if (P.current.immersive) { setupOrbit(s, camera, tgt); if (controls.current) controls.current.enabled = false; }
+        else if (controls.current) { controls.current.enabled = true; controls.current.update?.(); }
+        s.orbitImmersive = P.current.immersive;
+        s.phase = 'idle';
+      }
     }
   });
   return null;
