@@ -98,7 +98,7 @@ function Tile({ i, game }) {
 const HOP = 0.5;         // înălțimea săriturii
 const STEP_SPEED = 7;    // căsuțe pe secundă
 
-function Pawn({ player, offset }) {
+function Pawn({ player, offset, active, posRef, movingRef }) {
   const ref = useRef();
   // pos = poziție absolută „nedesfășurată" (float); end = ținta absolută
   const anim = useRef({ pos: player.pos, end: player.pos, endTile: player.pos });
@@ -126,6 +126,8 @@ function Pawn({ player, offset }) {
     const z = pa.z + (pb.z - pa.z) * frac + offset[1];
     const y = H / 2 + (moving ? Math.sin(frac * Math.PI) * HOP : 0);
     if (ref.current) ref.current.position.set(x, y, z);
+    if (active && posRef) posRef.current.set(x, y, z);
+    if (active && movingRef) movingRef.current = moving;
   });
 
   return (
@@ -255,49 +257,76 @@ function CameraFollow({ game, controls }) {
   return null;
 }
 
-// Camera cinematică la aruncarea zarului: coboară spre zaruri, ține, apoi revine.
+// Regizor cinematic: 1) picaj spre zaruri, 2) urmărește pionul care sare, 3) revine.
 const easeCubic = (t) => 1 - Math.pow(1 - t, 3);
-function CinematicDiceCam({ rollNonce, controls }) {
+const CHASE_OFFSET = new THREE.Vector3(3.5, 5.2, 7);
+function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving }) {
   const { camera } = useThree();
-  const st = useRef({ nonce: rollNonce, start: -1, home: new THREE.Vector3(), homeTarget: new THREE.Vector3() });
+  const st = useRef({
+    nonce: rollNonce, phase: 'idle', start: -1, trackStart: -1, outStart: -1,
+    home: new THREE.Vector3(), homeTarget: new THREE.Vector3(),
+    outFromPos: new THREE.Vector3(), outFromTgt: new THREE.Vector3(),
+  });
 
   if (rollNonce !== st.current.nonce) {
     st.current.nonce = rollNonce;
-    const wasAnimating = st.current.start >= 0;
-    st.current.start = performance.now();
-    // păstrează „home" original dacă se aruncă din nou în timpul cinematic-ului (dublă)
-    if (!wasAnimating) {
+    const idle = st.current.phase === 'idle';
+    if (idle) {
       st.current.home.copy(camera.position);
       if (controls.current) st.current.homeTarget.copy(controls.current.target);
     }
+    st.current.phase = 'dice';
+    st.current.start = performance.now();
     if (controls.current) controls.current.enabled = false;
   }
 
   useFrame(() => {
     const s = st.current;
-    if (s.start < 0) return;
-    const el = performance.now() - s.start;
+    if (s.phase === 'idle') return;
+    const now = performance.now();
     const closePos = new THREE.Vector3(2.6, 2.8, 8.6);
     const closeTgt = new THREE.Vector3(0, 0.6, 3.2);
-    const IN = 340, HOLD = 1050, OUT = 1850;
-    let camPos, camTgt;
-    if (el < IN) { const t = easeCubic(el / IN); camPos = s.home.clone().lerp(closePos, t); camTgt = s.homeTarget.clone().lerp(closeTgt, t); }
-    else if (el < HOLD) { camPos = closePos; camTgt = closeTgt; }
-    else if (el < OUT) { const t = easeCubic((el - HOLD) / (OUT - HOLD)); camPos = closePos.clone().lerp(s.home, t); camTgt = closeTgt.clone().lerp(s.homeTarget, t); }
-    else {
-      camera.position.copy(s.home);
-      if (controls.current) { controls.current.target.copy(s.homeTarget); controls.current.enabled = true; }
-      s.start = -1; return;
+    const tgt = controls.current ? controls.current.target : new THREE.Vector3();
+
+    if (s.phase === 'dice') {
+      const el = now - s.start;
+      const IN = 340, HOLD_END = 1150;
+      if (el < IN) { const t = easeCubic(el / IN); camera.position.copy(s.home).lerp(closePos, t); tgt.copy(s.homeTarget).lerp(closeTgt, t); }
+      else if (el < HOLD_END) { camera.position.copy(closePos); tgt.copy(closeTgt); }
+      else { s.phase = 'track'; s.trackStart = now; }
+      camera.lookAt(tgt);
+      return;
     }
-    camera.position.copy(camPos);
-    if (controls.current) controls.current.target.copy(camTgt);
-    camera.lookAt(camTgt);
+
+    if (s.phase === 'track') {
+      // urmărire lină a pionului activ
+      const p = pawnPos.current;
+      const want = p.clone().add(CHASE_OFFSET);
+      camera.position.lerp(want, 0.09);
+      tgt.lerp(p, 0.14);
+      camera.lookAt(tgt);
+      const trackEl = now - s.trackStart;
+      if (!pawnMoving.current && trackEl > 500) {
+        s.phase = 'out'; s.outStart = now; s.outFromPos.copy(camera.position); s.outFromTgt.copy(tgt);
+      }
+      return;
+    }
+
+    if (s.phase === 'out') {
+      const t = easeCubic(Math.min(1, (now - s.outStart) / 800));
+      camera.position.copy(s.outFromPos).lerp(s.home, t);
+      tgt.copy(s.outFromTgt).lerp(s.homeTarget, t);
+      camera.lookAt(tgt);
+      if (t >= 1) { camera.position.copy(s.home); tgt.copy(s.homeTarget); if (controls.current) controls.current.enabled = true; s.phase = 'idle'; }
+    }
   });
   return null;
 }
 
 export default function Board3D({ game, dice, rollNonce }) {
   const controls = useRef();
+  const pawnPos = useRef(new THREE.Vector3());
+  const pawnMoving = useRef(false);
   const players = game.players.filter(p => !p.bankrupt);
   const slotOffset = (idx, n) => {
     const ring = 0.34;
@@ -313,7 +342,7 @@ export default function Board3D({ game, dice, rollNonce }) {
         <OrbitControls ref={controls} target={[0, 0, 0]} enablePan={false} minDistance={10} maxDistance={60}
           maxPolarAngle={1.4} minPolarAngle={0.15} enableDamping dampingFactor={0.08} />
         <CameraFollow game={game} controls={controls} />
-        <CinematicDiceCam rollNonce={rollNonce} controls={controls} />
+        <CinematicDirector rollNonce={rollNonce} controls={controls} pawnPos={pawnPos} pawnMoving={pawnMoving} />
         <Dice3D dice={dice} rollNonce={rollNonce} />
         <ambientLight intensity={0.7} />
         <directionalLight position={[10, 22, 12]} intensity={1.4} castShadow
@@ -333,7 +362,10 @@ export default function Board3D({ game, dice, rollNonce }) {
 
         <CenterPiece />
         {BOARD.map((_, i) => <Tile key={i} i={i} game={game} />)}
-        {players.map((p, i) => <Pawn key={p.id} player={p} offset={slotOffset(i, players.length)} />)}
+        {players.map((p, i) => (
+          <Pawn key={p.id} player={p} offset={slotOffset(i, players.length)}
+            active={p.id === game.turn} posRef={pawnPos} movingRef={pawnMoving} />
+        ))}
       </Canvas>
     </div>
   );
