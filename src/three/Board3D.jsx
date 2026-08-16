@@ -1,4 +1,4 @@
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Text, RoundedBox } from '@react-three/drei';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
@@ -174,7 +174,9 @@ function Die({ value, rollNonce, origin }) {
     st.current.nonce = rollNonce;
     st.current.start = performance.now();
     st.current.axis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
-    st.current.spins = 3 + Math.floor(Math.random() * 3);
+    st.current.spins = 5 + Math.floor(Math.random() * 4);
+    // punct de „aruncare" (mai sus și mai spre cameră), de unde cade spre origin
+    st.current.from = new THREE.Vector3(origin[0] + (Math.random() - 0.5) * 2, origin[1] + 5, origin[2] + 3.5);
   }
 
   useFrame(() => {
@@ -182,13 +184,19 @@ function Die({ value, rollNonce, origin }) {
     const tgt = targetQuat(value || 1);
     const s = st.current;
     if (s.start < 0) { m.quaternion.copy(tgt); m.position.set(origin[0], origin[1], origin[2]); return; }
-    const dur = 850;
+    const dur = 1150;
     const T = Math.min(1, (performance.now() - s.start) / dur);
     const ease = 1 - Math.pow(1 - T, 3);
+    // rotire (tumble) care se stinge → aterizează exact pe valoare
     const tumbleAngle = (1 - ease) * s.spins * Math.PI * 2;
     const tumble = new THREE.Quaternion().setFromAxisAngle(s.axis, tumbleAngle);
     m.quaternion.copy(tgt).premultiply(tumble);
-    m.position.set(origin[0], origin[1] + Math.sin(T * Math.PI) * 1.1, origin[2]);
+    // traiectorie: din punctul de aruncare spre origin, cu 3 sărituri care scad
+    const ox = s.from.x + (origin[0] - s.from.x) * ease;
+    const oz = s.from.z + (origin[2] - s.from.z) * ease;
+    const bounce = Math.abs(Math.sin(T * Math.PI * 3)) * (1 - T) * 2.2;
+    const drop = s.from.y + (origin[1] - s.from.y) * ease;
+    m.position.set(ox, Math.max(origin[1], drop) + bounce, oz);
     if (T >= 1) s.start = -1;
   });
 
@@ -238,11 +246,52 @@ function CenterPiece() {
 function CameraFollow({ game, controls }) {
   useFrame(() => {
     const p = game.players.find(x => x.id === game.turn);
-    if (!p || !controls.current) return;
+    if (!p || !controls.current || controls.current.enabled === false) return; // nu în timpul cinematic-ului
     const { x, z } = pos3(p.pos);
     const t = controls.current.target;
     t.x += (x * 0.32 - t.x) * 0.03; // urmărire lină, parțială
     t.z += (z * 0.32 - t.z) * 0.03;
+  });
+  return null;
+}
+
+// Camera cinematică la aruncarea zarului: coboară spre zaruri, ține, apoi revine.
+const easeCubic = (t) => 1 - Math.pow(1 - t, 3);
+function CinematicDiceCam({ rollNonce, controls }) {
+  const { camera } = useThree();
+  const st = useRef({ nonce: rollNonce, start: -1, home: new THREE.Vector3(), homeTarget: new THREE.Vector3() });
+
+  if (rollNonce !== st.current.nonce) {
+    st.current.nonce = rollNonce;
+    const wasAnimating = st.current.start >= 0;
+    st.current.start = performance.now();
+    // păstrează „home" original dacă se aruncă din nou în timpul cinematic-ului (dublă)
+    if (!wasAnimating) {
+      st.current.home.copy(camera.position);
+      if (controls.current) st.current.homeTarget.copy(controls.current.target);
+    }
+    if (controls.current) controls.current.enabled = false;
+  }
+
+  useFrame(() => {
+    const s = st.current;
+    if (s.start < 0) return;
+    const el = performance.now() - s.start;
+    const closePos = new THREE.Vector3(2.6, 2.8, 8.6);
+    const closeTgt = new THREE.Vector3(0, 0.6, 3.2);
+    const IN = 340, HOLD = 1050, OUT = 1850;
+    let camPos, camTgt;
+    if (el < IN) { const t = easeCubic(el / IN); camPos = s.home.clone().lerp(closePos, t); camTgt = s.homeTarget.clone().lerp(closeTgt, t); }
+    else if (el < HOLD) { camPos = closePos; camTgt = closeTgt; }
+    else if (el < OUT) { const t = easeCubic((el - HOLD) / (OUT - HOLD)); camPos = closePos.clone().lerp(s.home, t); camTgt = closeTgt.clone().lerp(s.homeTarget, t); }
+    else {
+      camera.position.copy(s.home);
+      if (controls.current) { controls.current.target.copy(s.homeTarget); controls.current.enabled = true; }
+      s.start = -1; return;
+    }
+    camera.position.copy(camPos);
+    if (controls.current) controls.current.target.copy(camTgt);
+    camera.lookAt(camTgt);
   });
   return null;
 }
@@ -264,6 +313,7 @@ export default function Board3D({ game, dice, rollNonce }) {
         <OrbitControls ref={controls} target={[0, 0, 0]} enablePan={false} minDistance={10} maxDistance={60}
           maxPolarAngle={1.4} minPolarAngle={0.15} enableDamping dampingFactor={0.08} />
         <CameraFollow game={game} controls={controls} />
+        <CinematicDiceCam rollNonce={rollNonce} controls={controls} />
         <Dice3D dice={dice} rollNonce={rollNonce} />
         <ambientLight intensity={0.7} />
         <directionalLight position={[10, 22, 12]} intensity={1.4} castShadow

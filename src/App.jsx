@@ -158,8 +158,8 @@ function Table({ game, setGame }) {
     setShownDice(d);
     setRollNonce(n => n + 1);
     setRolling(true);
-    // zarurile se rostogolesc ~0.85s, apoi aplicăm mutarea (pionul sare după)
-    setTimeout(() => { setGame(g => applyRoll(g, d)); setRolling(false); }, 850);
+    // zarurile se rostogolesc cinematic ~1.15s, apoi aplicăm mutarea (pionul sare după)
+    setTimeout(() => { setGame(g => applyRoll(g, d)); setRolling(false); }, 1200);
   };
   const buy = () => { sfx.pay(); setGame(g => applyBuy(g)); };
   const decline = () => setGame(g => applyDeclineBuy(g));
