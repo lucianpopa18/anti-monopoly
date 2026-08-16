@@ -61,23 +61,31 @@ body.immersive-lock { overflow: hidden; overscroll-behavior: none; background: #
 .wrap.game.immersive .fsBtn { background: rgba(14,32,22,0.6); color: #F3EFE6; border-color: rgba(255,255,255,0.18); backdrop-filter: blur(4px); }
 .wrap.game.immersive .turnbar { display: none; } /* bara de tură eliminată în full screen */
 
+/* HUD imersiv: fără bară plină — controale compacte jos-DREAPTA, bani jos-stânga */
 .wrap.game.immersive .hud { position: absolute; left: 0; right: 0; bottom: 0; z-index: 20; margin: 0;
-  padding: 26px 12px calc(12px + env(safe-area-inset-bottom));
-  background: linear-gradient(to top, rgba(10,26,18,0.92), rgba(10,26,18,0.62) 60%, rgba(10,26,18,0));
-  max-height: 70%; overflow-y: auto; }
-/* bară de tură integrată */
-.wrap.game.immersive .turnbar { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); box-shadow: none; backdrop-filter: blur(6px); padding: 9px 12px; }
-.wrap.game.immersive .turnbar .who, .wrap.game.immersive .turnbar .mon { color: #F5F1E8; }
-.wrap.game.immersive .muteBtn { color: #F5F1E8; }
-.wrap.game.immersive .dice { margin: 8px 0; }
-/* butonul principal = auriu (iese în evidență ca acțiune de joc) */
-.wrap.game.immersive .btn { background: var(--gold, #E0A82E); color: #2A2110; box-shadow: 0 3px 0 rgba(0,0,0,0.3); }
-.wrap.game.immersive .btn.ghost { background: rgba(255,255,255,0.10); color: #F5F1E8; border: 1px solid rgba(255,255,255,0.18); box-shadow: none; }
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  background: none; display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  pointer-events: none; }
+.wrap.game.immersive .hud > * { pointer-events: auto; }
+.wrap.game.immersive .turnbar { display: none; }
+.wrap.game.immersive .dice { display: none; } /* zarurile 3D sunt pe tablă */
+/* rânduri de acțiuni → cluster compact, aliniat la dreapta */
+.wrap.game.immersive .actions { width: auto; justify-content: flex-end; gap: 8px; }
+.wrap.game.immersive .actions .btn { flex: 0 0 auto; width: auto; min-width: 0; padding: 0 16px; min-height: 46px;
+  font-size: 15px; border-radius: 14px; box-shadow: 0 5px 16px rgba(0,0,0,0.4); }
+.wrap.game.immersive .btn { background: var(--gold, #E0A82E); color: #2A2110; }
+.wrap.game.immersive .btn.ghost { background: rgba(18,34,24,0.82); color: #F5F1E8; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 5px 16px rgba(0,0,0,0.4); backdrop-filter: blur(6px); }
 .wrap.game.immersive .btn:disabled { opacity: 0.4; }
-/* jetoane bani + jurnal integrate */
-.wrap.game.immersive .moneyChip { background: rgba(255,255,255,0.08); color: #F5F1E8; border: 1px solid rgba(255,255,255,0.16); }
+/* butonul „Construiește/Gestionează" de lățime plină → auto, în cluster */
+.wrap.game.immersive .hud > .btn.ghost { width: auto; min-height: 46px; padding: 0 16px; border-radius: 14px; }
+/* jetoane bani → mici, jos-stânga */
+.wrap.game.immersive .moneyList { position: absolute; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); margin: 0; max-width: 46%; }
+.wrap.game.immersive .moneyChip { background: rgba(18,34,24,0.82); color: #F5F1E8; border: 1px solid rgba(255,255,255,0.16); backdrop-filter: blur(6px); font-size: 11.5px; padding: 5px 9px; }
 .wrap.game.immersive .moneyChip.turn { border-color: var(--gold, #E0A82E); box-shadow: 0 0 0 1px var(--gold, #E0A82E); }
-.wrap.game.immersive .log { display: none; } /* jurnalul e ascuns în imersiv (mai curat) */
+.wrap.game.immersive .log { display: none; } /* jurnalul e ascuns în imersiv */
+/* bannere + panouri → compacte, la dreapta, deasupra butoanelor */
+.wrap.game.immersive .cardBanner, .wrap.game.immersive .debtBanner { max-width: min(360px, 88vw); backdrop-filter: blur(6px); }
+.wrap.game.immersive .panel { max-width: min(340px, 90vw); }
 /* panouri (construiește / gestionează / licitație / schimb) în ton întunecat */
 .wrap.game.immersive .panel { background: rgba(18,38,26,0.95); border: 1px solid rgba(255,255,255,0.12); box-shadow: none; }
 .wrap.game.immersive .panel .sub { color: #A8C3B4; }
