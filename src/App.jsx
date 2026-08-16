@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { sfx } from './sfx.js';
 import { BOARD, GROUPS } from './game/board.js';
 import { gridPos, isCorner } from './game/layout.js';
 import {
@@ -12,6 +13,17 @@ import {
 
 export default function App() {
   const [game, setGame] = useState(null);
+
+  // Sunete contextuale la schimbări de stare (carte trasă / câștig).
+  const lastCardRef = useRef(null);
+  const endedRef = useRef(false);
+  useEffect(() => {
+    if (!game) { lastCardRef.current = null; endedRef.current = false; return; }
+    const cardKey = game.lastCard ? `${game.lastCard.text}` : null;
+    if (cardKey && cardKey !== lastCardRef.current) { sfx.card(); lastCardRef.current = cardKey; }
+    if (game.status === 'ended' && !endedRef.current) { sfx.win(); endedRef.current = true; }
+  }, [game]);
+
   if (!game) return <Setup onStart={setGame} />;
   if (game.status === 'lobby') return <Lobby game={game} setGame={setGame} />;
   if (game.status === 'ended') return <WinnerScreen game={game} onRestart={() => setGame(null)} />;
@@ -133,16 +145,20 @@ function Table({ game, setGame }) {
   const [manageOpen, setManageOpen] = useState(false);
   const me = currentPlayer(game);
 
+  const [muted, setMuted] = useState(false);
+  const toggleMute = () => { const m = !muted; setMuted(m); sfx.setMuted(m); };
+
   const roll = () => {
-    if (game.pending || rolling) return;
+    if (game.pending || game.debt || rolling) return;
+    sfx.roll();
     setRolling(true);
-    setTimeout(() => { setGame(g => applyRoll(g, rollDicePair())); setRolling(false); }, 350);
+    setTimeout(() => { setGame(g => applyRoll(g, rollDicePair())); setRolling(false); }, 450);
   };
-  const buy = () => setGame(g => applyBuy(g));
+  const buy = () => { sfx.pay(); setGame(g => applyBuy(g)); };
   const decline = () => setGame(g => applyDeclineBuy(g));
   const endTurn = () => { setBuildOpen(false); setManageOpen(false); setGame(g => applyEndTurn(g)); };
-  const build = (idx) => setGame(g => applyBuild(g, idx));
-  const payTax = (mode) => setGame(g => applyPayIncomeTax(g, mode));
+  const build = (idx) => { sfx.build(); setGame(g => applyBuild(g, idx)); };
+  const payTax = (mode) => { sfx.pay(); setGame(g => applyPayIncomeTax(g, mode)); };
 
   const pendingSq = game.pending?.type === 'buy' ? BOARD[game.pending.idx] : null;
   const taxPending = game.pending?.type === 'incometax';
@@ -164,15 +180,16 @@ function Table({ game, setGame }) {
           <span className="dot" style={{ background: me?.color, width: 16, height: 16 }} />
           <span className="who">{me?.name}{me?.inJail ? ' 🔒' : ''}</span>
           <span style={{ color: 'var(--muted)', fontWeight: 800, fontSize: 13 }}>
-            {me?.role === 'competitor' ? '🟢' : '🔵'} · {BOARD[me?.pos]?.name}
+            {me?.role === 'competitor' ? '🟢' : '🔵'}
           </span>
           <span className="mon">€{me?.money}</span>
+          <button className="muteBtn" onClick={toggleMute} aria-label={muted ? 'Activează sunetul' : 'Oprește sunetul'}>{muted ? '🔇' : '🔊'}</button>
         </div>
 
         {game.dice && (
           <div className="dice">
-            <div className="die">{game.dice[0]}</div>
-            <div className="die">{game.dice[1]}</div>
+            <div className={`die ${rolling ? 'rolling' : 'landed'}`}>{game.dice[0]}</div>
+            <div className={`die ${rolling ? 'rolling' : 'landed'}`}>{game.dice[1]}</div>
           </div>
         )}
 
@@ -412,6 +429,7 @@ function ManagePanel({ game, setGame, me, myProps }) {
 }
 
 function Board({ game }) {
+  const herePos = game.players.find(p => p.id === game.turn)?.pos;
   const cells = [];
   for (let i = 0; i < 40; i++) {
     const sq = BOARD[i];
@@ -422,7 +440,7 @@ function Board({ game }) {
     const icon = squareIcon(sq);
 
     cells.push(
-      <div key={i} className={`cell ${isCorner(i) ? 'corner' : ''}`} style={{ gridRow: row, gridColumn: col }}>
+      <div key={i} className={`cell ${isCorner(i) ? 'corner' : ''} ${i === herePos ? 'here' : ''}`} style={{ gridRow: row, gridColumn: col }}>
         {isCorner(i) ? (
           <div className="cornerLabel">{cornerLabel(sq)}</div>
         ) : (

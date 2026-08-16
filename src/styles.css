@@ -107,3 +107,24 @@ button { font-family: inherit; cursor: pointer; }
 .tchip { border: 1px solid var(--line2); background: #fff; border-radius: 999px; padding: 6px 11px;
   font-size: 12px; font-weight: 800; color: var(--ink); }
 .tchip.on { background: var(--comp); border-color: var(--comp); color: #fff; }
+
+/* ---------- Faza 4: animații + polish ---------- */
+button:active { transform: scale(0.97); }
+.muteBtn { border: none; background: transparent; font-size: 18px; padding: 0 2px; margin-left: 4px; line-height: 1; }
+.die.rolling { animation: shake 0.14s linear infinite; }
+.die.landed { animation: pop 0.3s cubic-bezier(.2,1.4,.4,1); }
+@keyframes shake {
+  0% { transform: translate(0,0) rotate(0); } 25% { transform: translate(-2px,1px) rotate(-8deg); }
+  50% { transform: translate(2px,-1px) rotate(8deg); } 75% { transform: translate(-1px,-1px) rotate(-4deg); }
+  100% { transform: translate(0,0) rotate(0); }
+}
+@keyframes pop { 0% { transform: scale(0.7); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+.cell.here { box-shadow: inset 0 0 0 2px var(--gold, #E8C15A); animation: hereGlow 1.1s ease-in-out infinite; z-index: 2; }
+:root { --gold: #E0A82E; }
+@keyframes hereGlow { 0%,100% { box-shadow: inset 0 0 0 2px rgba(224,168,46,0.55); } 50% { box-shadow: inset 0 0 0 2px rgba(224,168,46,1); } }
+.tok { transition: all 0.25s ease; }
+.cardBanner { animation: slideIn 0.28s ease; }
+.debtBanner { animation: slideIn 0.28s ease; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+.moneyChip .dot { transition: background 0.2s; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
