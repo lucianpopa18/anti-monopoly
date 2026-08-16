@@ -3,7 +3,8 @@ import { BOARD, GROUPS } from './game/board.js';
 import { gridPos, isCorner } from './game/layout.js';
 import {
   createGame, addPlayer, startGame, applyRoll, applyBuy, applyDeclineBuy,
-  applyEndTurn, currentPlayer, ownerOf, rollDicePair, suggestRole,
+  applyEndTurn, currentPlayer, ownerOf, rollDicePair,
+  applyBuild, buildableFor, houseCost, applyPayIncomeTax, incomeTaxOptions,
 } from './game/engine.js';
 
 export default function App() {
@@ -96,6 +97,7 @@ function Lobby({ game, setGame }) {
 /* ---------------- TABLA + JOCUL ---------------- */
 function Table({ game, setGame }) {
   const [rolling, setRolling] = useState(false);
+  const [buildOpen, setBuildOpen] = useState(false);
   const me = currentPlayer(game);
 
   const roll = () => {
@@ -105,11 +107,16 @@ function Table({ game, setGame }) {
   };
   const buy = () => setGame(g => applyBuy(g));
   const decline = () => setGame(g => applyDeclineBuy(g));
-  const endTurn = () => setGame(g => applyEndTurn(g));
+  const endTurn = () => { setBuildOpen(false); setGame(g => applyEndTurn(g)); };
+  const build = (idx) => setGame(g => applyBuild(g, idx));
+  const payTax = (mode) => setGame(g => applyPayIncomeTax(g, mode));
 
   const pendingSq = game.pending?.type === 'buy' ? BOARD[game.pending.idx] : null;
+  const taxPending = game.pending?.type === 'incometax';
+  const taxOpts = taxPending ? incomeTaxOptions(game, me.id) : null;
   const canRoll = !game.pending && !rolling;
   const rolledDouble = game.dice && game.dice[0] === game.dice[1] && !me?.inJail;
+  const buildable = me ? buildableFor(game, me.id) : [];
 
   return (
     <div className="wrap">
@@ -137,14 +144,43 @@ function Table({ game, setGame }) {
             <button className="btn" onClick={buy}>Cumpără {pendingSq.name} · €{pendingSq.price}</button>
             <button className="btn ghost" onClick={decline}>Refuz</button>
           </div>
-        ) : (
+        ) : taxPending ? (
           <div className="actions">
-            <button className="btn" onClick={roll} disabled={!canRoll}>
-              {rolling ? '…' : game.dice ? (rolledDouble ? 'Dublă! Mai arunci 🎲' : '🎲 Aruncă') : '🎲 Aruncă zarul'}
-            </button>
-            {game.dice && !rolledDouble && <button className="btn ghost" onClick={endTurn}>Termină tura →</button>}
-            {game.dice && rolledDouble && <button className="btn ghost" onClick={endTurn}>Continuă →</button>}
+            <button className="btn" onClick={() => payTax('fixed')}>Fix · €{taxOpts.fixed}</button>
+            <button className="btn ghost" onClick={() => payTax('percent')}>{taxOpts.pct}% active · €{taxOpts.percent}</button>
           </div>
+        ) : (
+          <>
+            <div className="actions">
+              <button className="btn" onClick={roll} disabled={!canRoll}>
+                {rolling ? '…' : game.dice ? (rolledDouble ? 'Dublă! Mai arunci 🎲' : '🎲 Aruncă') : '🎲 Aruncă zarul'}
+              </button>
+              {game.dice && <button className="btn ghost" onClick={endTurn}>{rolledDouble ? 'Continuă →' : 'Termină tura →'}</button>}
+            </div>
+            {buildable.length > 0 && (
+              <button className="btn ghost" style={{ width: '100%', marginTop: 8 }} onClick={() => setBuildOpen(o => !o)}>
+                🏠 Construiește ({buildable.length}) {buildOpen ? '▲' : '▼'}
+              </button>
+            )}
+            {buildOpen && buildable.length > 0 && (
+              <div className="panel" style={{ marginTop: 8, marginBottom: 0 }}>
+                <p className="sub" style={{ margin: '0 0 8px', textAlign: 'left' }}>
+                  {me.role === 'monopolist' ? 'Monopolist: construiești pe orașe complete.' : 'Competitor: construiești pe orice proprietate a ta.'}
+                </p>
+                <div className="plist">
+                  {buildable.map(idx => (
+                    <button key={idx} className="pchip" style={{ border: 'none', cursor: 'pointer' }} onClick={() => build(idx)}>
+                      <span className="dot" style={{ background: (GROUPS[BOARD[idx].group]?.color) }} />
+                      <b>{BOARD[idx].name}</b>
+                      <span style={{ marginLeft: 'auto', fontWeight: 800 }}>
+                        {'🏠'.repeat(game.buildings?.[idx] || 0)} +🏠 €{houseCost(idx, me.role)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         <div className="moneyList">
@@ -179,7 +215,13 @@ function Board({ game }) {
           <div className="cornerLabel">{cornerLabel(sq)}</div>
         ) : (
           <>
-            {groupColor && <div className="bar" style={{ background: groupColor }} />}
+            {groupColor && (
+              <div className="bar" style={{ background: groupColor }}>
+                {(game.buildings?.[i] || 0) > 0 && (
+                  <span className="houses">{'🏠'.repeat(game.buildings[i])}</span>
+                )}
+              </div>
+            )}
             <div className="cn">{sq.name}</div>
             {icon && <div className="ic">{icon}</div>}
             {'price' in sq && <div className="cp">€{sq.price}</div>}

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createGame, addPlayer, startGame, applyRoll, applyBuy, applyDeclineBuy,
   applyEndTurn, currentPlayer, ownerOf, computeRent, START_MONEY, LAND_START, PASS_START,
+  applyBuild, canBuild, houseCost, buildableFor, applyPayIncomeTax, incomeTaxOptions,
 } from '../src/game/engine.js';
 import { BOARD } from '../src/game/board.js';
 
@@ -90,12 +91,14 @@ test('monopolistul cu tot orașul dublează chiria de bază', () => {
 
 test('3 duble la rând trimit la închisoare', () => {
   let g = twoPlayerGame();
-  g = applyRoll(g, [2, 2]); g = applyEndTurn(g); // dublă 1, mai joacă
-  g = applyRoll(g, [3, 3]); g = applyEndTurn(g); // dublă 2
-  g = applyRoll(g, [1, 1]); // dublă 3 → jail
   const p = g.players[0];
-  assert.equal(p.inJail, true);
-  assert.equal(p.pos, 10);
+  p.pos = 6;
+  g.ownership = { 8: p.id, 12: p.id }; // aterizează pe proprietăți proprii (fără pending)
+  g = applyRoll(g, [1, 1]); g = applyEndTurn(g); // dublă 1 → pos 8 (a lui)
+  g = applyRoll(g, [2, 2]); g = applyEndTurn(g); // dublă 2 → pos 12 (a lui)
+  g = applyRoll(g, [3, 3]);                       // dublă 3 → jail
+  assert.equal(g.players[0].inJail, true);
+  assert.equal(g.players[0].pos, 10);
 });
 
 test('refuz cumpărare curăță pending', () => {
@@ -104,4 +107,69 @@ test('refuz cumpărare curăță pending', () => {
   g = applyDeclineBuy(g);
   assert.equal(g.pending, null);
   assert.equal(g.ownership[1], undefined);
+});
+
+test('Competitor construiește pe orice proprietate a lui (nu are nevoie de grup)', () => {
+  let g = twoPlayerGame();
+  const comp = g.players[0]; // competitor
+  g.ownership = { 6: comp.id }; // Calea Victoriei (grup incomplet)
+  assert.equal(canBuild(g, comp.id, 6), true);
+  const cost = houseCost(6, 'competitor');
+  assert.equal(cost, Math.round(BOARD[6].price / 2));
+  const before = g.players[0].money;
+  g = applyBuild(g, 6);
+  assert.equal(g.buildings[6], 1);
+  assert.equal(g.players[0].money, before - cost);
+  // chiria crește cu o casă: base × 2
+  assert.equal(computeRent(g, 6), BOARD[6].baseRent * 2);
+});
+
+test('Monopolist NU poate construi fără tot orașul, dar poate cu el', () => {
+  let g = twoPlayerGame();
+  const mono = g.players[1];
+  g.ownership = { 6: mono.id, 8: mono.id }; // 2 din 3 București
+  assert.equal(canBuild(g, mono.id, 6), false);
+  g.ownership = { 6: mono.id, 8: mono.id, 9: mono.id }; // tot orașul
+  assert.equal(canBuild(g, mono.id, 6), true);
+  assert.equal(houseCost(6, 'monopolist'), BOARD[6].price); // clădiri mai scumpe
+});
+
+test('companii transport: chirie = suma zarului × coeficient după câte deții', () => {
+  let g = twoPlayerGame();
+  const o = g.players[0];
+  g.ownership = { 5: o.id }; // 1 transport (Aerian)
+  assert.equal(computeRent(g, 5, 8), 8 * 4);
+  g.ownership = { 5: o.id, 15: o.id }; // 2 transporturi
+  assert.equal(computeRent(g, 5, 8), 8 * 8);
+});
+
+test('impozit pe venit: alegere fix €200 vs % din active', () => {
+  let g = twoPlayerGame();
+  const p = g.players[0];
+  p.pos = 3; // 1 pas → idx 4 (impozit pe venit)
+  g.turn = p.id;
+  g = applyRoll(g, [1, 0]);
+  assert.equal(g.pending?.type, 'incometax');
+  const opts = incomeTaxOptions(g, p.id);
+  assert.equal(opts.fixed, 200);
+  assert.equal(opts.percent, Math.round(START_MONEY * 0.10)); // competitor 10%
+  g = applyPayIncomeTax(g, 'fixed');
+  assert.equal(g.players[0].money, START_MONEY - 200);
+  assert.equal(g.pending, null);
+});
+
+test('Fundația: Competitor cu zar 2 primește €50; Monopolist plătește €160', () => {
+  // Competitor pică pe Fundația (idx 20) cu primul zar = 2
+  let g = twoPlayerGame();
+  const c = g.players[0];
+  c.pos = 18; g.turn = c.id;
+  g = applyRoll(g, [2, 0]); // primul zar 2 → +€50
+  assert.equal(g.players[0].pos, 20);
+  assert.equal(g.players[0].money, START_MONEY + 50);
+  // Monopolist pică pe Fundația → −€160
+  let g2 = twoPlayerGame();
+  const m = g2.players[1];
+  g2.turn = m.id; m.pos = 18;
+  g2 = applyRoll(g2, [2, 0]);
+  assert.equal(g2.players[1].money, START_MONEY - 160);
 });

@@ -146,7 +146,7 @@ export function applyRoll(state, dice) {
   }
 
   move(s, p, d1 + d2);
-  resolveLanding(s, p, d1 + d2);
+  resolveLanding(s, p, [d1, d2]);
   return s;
 }
 
@@ -160,17 +160,21 @@ function move(s, p, steps) {
   p.pos = np;
 }
 
-function resolveLanding(s, p, steps) {
+function resolveLanding(s, p, dice) {
+  const steps = dice[0] + dice[1];
   const idx = p.pos;
   const sq = BOARD[idx];
 
   if (idx === START) { p.money += LAND_START; log(s, `${p.name} aterizează pe START (+€${LAND_START}).`); return; }
   if (sq.type === 'corner') {
     if (sq.kind === 'gotojail') { sendToJail(s, p); log(s, `${p.name} → Consiliul Concurenței: la închisoare!`); return; }
-    if (sq.kind === 'fundatia') { log(s, `${p.name} pe Fundația Anti-Monopoly.`); return; } // efect complet la Faza 2
+    if (sq.kind === 'fundatia') { resolveFundatia(s, p, dice[0]); return; }
     return; // jail (vizită) / restul
   }
-  if (sq.type === 'tax') { p.money -= sq.amount; log(s, `${p.name} plătește ${sq.name} (−€${sq.amount}).`); return; }
+  if (sq.type === 'tax') {
+    if (sq.kind === 'income') { s.pending = { type: 'incometax', idx }; return; } // alegere €200 / % active
+    p.money -= sq.amount; log(s, `${p.name} plătește ${sq.name} (−€${sq.amount}).`); return;
+  }
   if (sq.type === 'card') { log(s, `${p.name} trage o carte ${p.role === 'competitor' ? '🟢' : '🔵'} (efect la Faza 3).`); return; }
 
   // proprietăți / transport / utilități
@@ -187,29 +191,122 @@ function resolveLanding(s, p, steps) {
   }
 }
 
-// Chirie de bază (Faza 1). Monopol/clădiri/coeficient companii → Faza 2.
+// Fundația Anti-Monopoly: Competitorul dă un zar (1→€25, 2→€50); Monopolistul plătește €160.
+function resolveFundatia(s, p, die) {
+  if (p.role === 'competitor') {
+    const gain = die === 1 ? 25 : die === 2 ? 50 : 0;
+    if (gain > 0) { p.money += gain; log(s, `${p.name} la Fundație: zar ${die} → +€${gain}.`); }
+    else log(s, `${p.name} la Fundație: zar ${die} → nimic.`);
+  } else {
+    p.money -= 160; log(s, `${p.name} (Monopolist) plătește €160 la Fundație.`);
+  }
+}
+
+// ---------- IMPOZIT PE VENIT (alegere: fix €200 sau % din active) ----------
+export function playerAssets(state, playerId) {
+  const p = state.players.find(x => x.id === playerId);
+  if (!p) return 0;
+  let total = p.money;
+  BOARD.forEach((sq, i) => {
+    if (state.ownership?.[i] === playerId && 'price' in sq) {
+      total += state.mortgaged?.[i] ? Math.round(sq.price / 2) : sq.price;
+      const houses = state.buildings?.[i] || 0;
+      total += houses * houseCost(i, p.role);
+    }
+  });
+  return total;
+}
+
+export function incomeTaxOptions(state, playerId) {
+  const p = state.players.find(x => x.id === playerId);
+  const pct = p?.role === 'monopolist' ? 0.20 : 0.10;
+  const percentAmount = Math.round(playerAssets(state, playerId) * pct);
+  return { fixed: 200, percent: percentAmount, pct: Math.round(pct * 100) };
+}
+
+export function applyPayIncomeTax(state, mode) {
+  const s = clone(state);
+  if (s.pending?.type !== 'incometax') return s;
+  const p = currentPlayer(s);
+  const opts = incomeTaxOptions(s, p.id);
+  const amount = mode === 'percent' ? opts.percent : opts.fixed;
+  p.money -= amount;
+  log(s, `${p.name} plătește impozit pe venit: ${mode === 'percent' ? `${opts.pct}% active` : 'fix'} (−€${amount}).`);
+  s.pending = null;
+  return s;
+}
+
+// ---------- CHIRII (Faza 2: roluri, clădiri, companii) ----------
+// Coeficienți companii (chirie = suma zarului × coeficient de pe card).
+const TRANSPORT_COEF = { 1: 4, 2: 8, 3: 12, 4: 20 };
+const UTILITY_COEF = { 1: 4, 2: 10 };
+
 export function computeRent(s, idx, diceSum = 0) {
   const sq = BOARD[idx];
   const ownerId = s.ownership?.[idx];
-  if (s.mortgaged?.[idx]) return 0;
+  if (!ownerId || s.mortgaged?.[idx]) return 0;
+  const owner = s.players.find(p => p.id === ownerId);
+  const houses = s.buildings?.[idx] || 0;
+
   if (sq.type === 'property') {
-    let rent = sq.baseRent;
-    const owner = s.players.find(p => p.id === ownerId);
-    // Monopolistul cu tot orașul: chirie de bază dublată (Faza 2 rafinează clădirile).
-    if (owner?.role === 'monopolist' && ownsWholeGroup(s, ownerId, sq.group)) rent *= 2;
-    const houses = s.buildings?.[idx] || 0;
-    if (houses > 0) rent += houses * Math.round(sq.baseRent * 0.75);
-    return rent;
+    const base = sq.baseRent;
+    if (owner?.role === 'monopolist') {
+      // Monopolistul: dublează baza pe tot orașul; fiecare casă adaugă 2×bază (chirii mari).
+      const monopoly = ownsWholeGroup(s, ownerId, sq.group);
+      const b = monopoly ? base * 2 : base;
+      return b + houses * (base * 2);
+    }
+    // Competitorul: chirii moderate; fiecare casă adaugă 1×bază.
+    return base * (1 + houses);
   }
   if (sq.type === 'transport') {
     const count = countOwned(s, ownerId, 'transport');
-    return 25 * count; // 25/50/75/100
+    return (diceSum || 7) * (TRANSPORT_COEF[count] || 0);
   }
   if (sq.type === 'utility') {
     const count = countOwned(s, ownerId, 'utility');
-    return (diceSum || 7) * (count >= 2 ? 10 : 4);
+    return (diceSum || 7) * (UTILITY_COEF[count] || 0);
   }
   return 0;
+}
+
+// ---------- CONSTRUCȚIE ----------
+// Costul unei case: Competitor = ½ preț; Monopolist = preț întreg (clădiri mai scumpe).
+export function houseCost(idx, role) {
+  const sq = BOARD[idx];
+  if (!sq || sq.type !== 'property') return Infinity;
+  return role === 'monopolist' ? sq.price : Math.round(sq.price / 2);
+}
+
+// Poate construi? Competitor: pe orice proprietate a lui. Monopolist: doar cu tot orașul.
+export function canBuild(state, playerId, idx) {
+  const sq = BOARD[idx];
+  if (!sq || sq.type !== 'property') return false;
+  if (state.ownership?.[idx] !== playerId) return false;
+  if (state.mortgaged?.[idx]) return false;
+  if ((state.buildings?.[idx] || 0) >= 4) return false;
+  const p = state.players.find(x => x.id === playerId);
+  if (!p) return false;
+  if (p.role === 'monopolist' && !ownsWholeGroup(state, playerId, sq.group)) return false;
+  return p.money >= houseCost(idx, p.role);
+}
+
+// Lista proprietăților pe care jucătorul poate construi acum.
+export function buildableFor(state, playerId) {
+  const out = [];
+  BOARD.forEach((sq, i) => { if (canBuild(state, playerId, i)) out.push(i); });
+  return out;
+}
+
+export function applyBuild(state, idx) {
+  const s = clone(state);
+  const p = currentPlayer(s);
+  if (!p || !canBuild(s, p.id, idx)) return s;
+  const cost = houseCost(idx, p.role);
+  p.money -= cost;
+  s.buildings[idx] = (s.buildings[idx] || 0) + 1;
+  log(s, `${p.name} construiește pe ${BOARD[idx].name} (−€${cost}) → ${s.buildings[idx]} 🏠`);
+  return s;
 }
 
 function countOwned(s, playerId, type) {

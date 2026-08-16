@@ -50,7 +50,9 @@ button { font-family: inherit; cursor: pointer; }
 .cell { background: #fff; border: 0.5px solid var(--line); position: relative; overflow: hidden;
   display: flex; flex-direction: column; min-width: 0; }
 .cell.corner { background: #fff; }
-.cell .bar { height: 22%; min-height: 7px; width: 100%; flex-shrink: 0; border-bottom: 0.5px solid rgba(0,0,0,0.15); }
+.cell .bar { height: 22%; min-height: 7px; width: 100%; flex-shrink: 0; border-bottom: 0.5px solid rgba(0,0,0,0.15);
+  display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.cell .houses { font-size: 5px; line-height: 1; letter-spacing: -1px; white-space: nowrap; }
 .cell .cn { font-size: 6.4px; line-height: 1.03; font-weight: 800; padding: 2px 2px 0; color: var(--ink); overflow: hidden; }
 .cell .cp { font-size: 6.6px; color: #333; padding: 0 2px 1px; margin-top: auto; font-weight: 900; }
 .cell .ic { font-size: 11px; text-align: center; margin-top: 1px; line-height: 1; }
