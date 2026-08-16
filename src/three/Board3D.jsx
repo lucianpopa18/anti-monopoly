@@ -230,29 +230,58 @@ function Dice3D({ dice, rollNonce }) {
   );
 }
 
+// Centrul tablei ca textură plată (ca pe tabla reală): alb, ramă de skyline negru,
+// logo diagonal + două sloturi de cărți (Monopolist / Competitor).
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function drawSlot(g, cx, cy, rot, label, color) {
+  g.save(); g.translate(cx, cy); g.rotate(rot);
+  g.strokeStyle = color; g.lineWidth = 6; roundRect(g, -160, -100, 320, 200, 16); g.stroke();
+  g.fillStyle = color; g.font = '800 42px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(label, 0, 0);
+  g.restore();
+}
+function makeCenterTexture() {
+  const S = 1400;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, S, S);
+  // ramă de skyline (siluetă neagră care intră spre centru din cele 4 laturi)
+  g.fillStyle = '#131313';
+  const step = 44; const rnd = (a, b) => a + Math.random() * (b - a);
+  for (let x = 0; x < S; x += step) {
+    const w = step - rnd(3, 9);
+    g.fillRect(x, 0, w, rnd(55, 155));            // sus
+    const hb = rnd(55, 155); g.fillRect(x, S - hb, w, hb); // jos
+  }
+  for (let y = 0; y < S; y += step) {
+    const w = step - rnd(3, 9);
+    g.fillRect(0, y, rnd(55, 155), w);            // stânga
+    const hr = rnd(55, 155); g.fillRect(S - hr, y, hr, w); // dreapta
+  }
+  // logo diagonal
+  g.save(); g.translate(S / 2, S / 2); g.rotate(-0.19);
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#131313'; g.font = '900 120px Arial'; g.fillText('ANTI-MONOPOLY', 0, -14);
+  g.fillStyle = '#8A6E4B'; g.font = '700 42px Arial'; g.fillText('Afaceri imobiliare · Jocul secolului 21', 0, 66);
+  g.restore();
+  // sloturi de cărți
+  drawSlot(g, S * 0.33, S * 0.65, -0.19, 'MONOPOLIST', '#2E5BD8');
+  drawSlot(g, S * 0.69, S * 0.33, -0.19, 'COMPETITOR', '#2E9E5B');
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 8; return t;
+}
+
 function CenterPiece() {
-  // skyline 3D discret + logo, pe fundal deschis
-  const buildings = useMemo(() => ([
-    [-4, 1.0, -2, 0.85], [-2.6, 1.7, -1.2, 0.75], [-1.2, 1.2, -2.2, 0.75], [0.2, 2.3, -1.4, 0.85],
-    [1.6, 1.5, -2.3, 0.75], [3, 1.9, -1.3, 0.75], [4.2, 1.05, -2.1, 0.85], [-3.2, 1.25, 0.2, 0.7],
-  ]), []);
+  const tex = useMemo(() => makeCenterTexture(), []);
+  const size = TILE * 9.35;
   return (
-    <group position={[0, 0.01, 0]}>
-      {buildings.map((b, k) => (
-        <mesh key={k} position={[b[0], b[1] / 2, b[2]]} castShadow>
-          <boxGeometry args={[b[3], b[1], b[3]]} />
-          <meshStandardMaterial color="#3A424C" roughness={0.6} />
-        </mesh>
-      ))}
-      <Text position={[0, 0.03, 1.4]} rotation={[-Math.PI / 2, 0, 0]} fontSize={1.0}
-        anchorX="center" anchorY="middle" color="#16181A" letterSpacing={-0.02}>
-        ANTI-MONOPOLY
-      </Text>
-      <Text position={[0, 0.03, 2.5]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.34}
-        anchorX="center" anchorY="middle" color="#8A6E4B">
-        Afaceri imobiliare · Jocul secolului 21
-      </Text>
-    </group>
+    <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[size, size]} />
+      <meshStandardMaterial map={tex} roughness={0.85} />
+    </mesh>
   );
 }
 
