@@ -263,14 +263,18 @@ function makeCenterTexture() {
     const hr = rnd(55, 155); g.fillRect(S - hr, y, hr, w); // dreapta
   }
   // logo diagonal
-  g.save(); g.translate(S / 2, S / 2); g.rotate(-0.19);
+  const LOGO_ROT = -0.19;
+  const cxc = S * 0.5, cyc = S * 0.5;
+  g.save(); g.translate(cxc, cyc); g.rotate(LOGO_ROT);
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillStyle = '#131313'; g.font = '900 120px Arial'; g.fillText('ANTI-MONOPOLY', 0, -14);
   g.fillStyle = '#8A6E4B'; g.font = '700 42px Arial'; g.fillText('Afaceri imobiliare · Jocul secolului 21', 0, 66);
   g.restore();
-  // sloturi de cărți
-  drawSlot(g, S * 0.33, S * 0.65, -0.19, 'MONOPOLIST', '#2E5BD8');
-  drawSlot(g, S * 0.69, S * 0.33, -0.19, 'COMPETITOR', '#2E9E5B');
+  // sloturi de cărți — simetrice de o parte și de alta a benzii logo, paralele cu ea
+  const perp = LOGO_ROT + Math.PI / 2;
+  const dist = S * 0.26;
+  drawSlot(g, cxc - Math.cos(perp) * dist, cyc - Math.sin(perp) * dist, LOGO_ROT, 'MONOPOLIST', '#2E5BD8');
+  drawSlot(g, cxc + Math.cos(perp) * dist, cyc + Math.sin(perp) * dist, LOGO_ROT, 'COMPETITOR', '#2E9E5B');
   const t = new THREE.CanvasTexture(c); t.anisotropy = 8; return t;
 }
 
