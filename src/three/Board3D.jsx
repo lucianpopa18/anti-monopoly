@@ -111,22 +111,26 @@ function Pawn({ player, offset }) {
 }
 
 function CenterPiece() {
-  // mic skyline 3D în centru
+  // skyline 3D discret + logo, pe fundal deschis
   const buildings = useMemo(() => ([
-    [-3, 0.9, -1, 0.8], [-2, 1.6, 0.4, 0.7], [-1, 1.1, -0.8, 0.7], [0, 2.2, 0.6, 0.8],
-    [1, 1.4, -0.5, 0.7], [2, 1.9, 0.8, 0.7], [3, 1.0, -0.9, 0.8], [0.6, 1.3, 1.6, 0.6],
+    [-4, 1.0, -2, 0.85], [-2.6, 1.7, -1.2, 0.75], [-1.2, 1.2, -2.2, 0.75], [0.2, 2.3, -1.4, 0.85],
+    [1.6, 1.5, -2.3, 0.75], [3, 1.9, -1.3, 0.75], [4.2, 1.05, -2.1, 0.85], [-3.2, 1.25, 0.2, 0.7],
   ]), []);
   return (
-    <group position={[0, 0, 1]}>
+    <group position={[0, 0.01, 0]}>
       {buildings.map((b, k) => (
         <mesh key={k} position={[b[0], b[1] / 2, b[2]]} castShadow>
           <boxGeometry args={[b[3], b[1], b[3]]} />
-          <meshStandardMaterial color="#20242A" roughness={0.6} />
+          <meshStandardMaterial color="#3A424C" roughness={0.6} />
         </mesh>
       ))}
-      <Text position={[0, 0.02, 3.2]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.9}
-        anchorX="center" anchorY="middle" color="#16181A">
+      <Text position={[0, 0.03, 1.4]} rotation={[-Math.PI / 2, 0, 0]} fontSize={1.0}
+        anchorX="center" anchorY="middle" color="#16181A" letterSpacing={-0.02}>
         ANTI-MONOPOLY
+      </Text>
+      <Text position={[0, 0.03, 2.5]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.34}
+        anchorX="center" anchorY="middle" color="#8A6E4B">
+        Afaceri imobiliare · Jocul secolului 21
       </Text>
     </group>
   );
@@ -140,18 +144,23 @@ export default function Board3D({ game }) {
     <div className="canvas3d">
       <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }}>
         <color attach="background" args={['#E7E6E1']} />
-        <PerspectiveCamera makeDefault position={[0, 11, 20]} fov={40} />
-        <OrbitControls target={[0, 0, 2]} enablePan={false} minDistance={12} maxDistance={30}
-          maxPolarAngle={1.32} minPolarAngle={0.5} enableDamping dampingFactor={0.08} />
-        <ambientLight intensity={0.65} />
-        <directionalLight position={[8, 18, 10]} intensity={1.5} castShadow
+        <PerspectiveCamera makeDefault position={[0, 20, 26]} fov={42} />
+        <OrbitControls target={[0, 0, 0]} enablePan={false} minDistance={10} maxDistance={60}
+          maxPolarAngle={1.4} minPolarAngle={0.15} enableDamping dampingFactor={0.08} />
+        <ambientLight intensity={0.7} />
+        <directionalLight position={[10, 22, 12]} intensity={1.4} castShadow
           shadow-mapSize-width={1024} shadow-mapSize-height={1024}
-          shadow-camera-left={-18} shadow-camera-right={18} shadow-camera-top={18} shadow-camera-bottom={-18} />
+          shadow-camera-left={-20} shadow-camera-right={20} shadow-camera-top={20} shadow-camera-bottom={-20} />
 
-        {/* baza tablei */}
-        <mesh position={[0, -0.2, 0]} receiveShadow>
-          <boxGeometry args={[TILE * 11.6, 0.4, TILE * 11.6]} />
-          <meshStandardMaterial color="#111316" roughness={0.9} />
+        {/* suprafața centrală deschisă (sub blaturile căsuțelor) */}
+        <mesh position={[0, -0.18, 0]} receiveShadow>
+          <boxGeometry args={[TILE * 11.4, 0.34, TILE * 11.4]} />
+          <meshStandardMaterial color="#F1EEE6" roughness={0.9} />
+        </mesh>
+        {/* ramă subțire închisă */}
+        <mesh position={[0, -0.22, 0]}>
+          <boxGeometry args={[TILE * 11.75, 0.34, TILE * 11.75]} />
+          <meshStandardMaterial color="#16181A" roughness={0.8} />
         </mesh>
 
         <CenterPiece />

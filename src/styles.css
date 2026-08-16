@@ -44,7 +44,7 @@ button { font-family: inherit; cursor: pointer; }
 .dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.15); }
 
 /* ---------- Board 3D ---------- */
-.canvas3d { width: 100%; height: min(64vh, 460px); border-radius: 14px; overflow: hidden;
+.canvas3d { width: 100%; height: min(70vh, 540px); border-radius: 14px; overflow: hidden;
   border: 2px solid var(--ink); box-shadow: 0 6px 24px rgba(0,0,0,0.12); touch-action: none; background: #E7E6E1; }
 
 /* ---------- Board (2D, fallback) ---------- */
