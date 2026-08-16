@@ -289,6 +289,66 @@ function CenterPiece() {
   );
 }
 
+// ---------- DECOR: iarbă + cer + munți ----------
+function makeGrassTexture() {
+  const S = 256; const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#3f8f45'; g.fillRect(0, 0, S, S);
+  const shades = ['#4aa153', '#357a3b', '#47963f', '#57ab5c', '#2f7135'];
+  for (let i = 0; i < 3200; i++) {
+    g.fillStyle = shades[(Math.random() * shades.length) | 0];
+    g.fillRect(Math.random() * S, Math.random() * S, 1 + Math.random() * 2, 1 + Math.random() * 3);
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(28, 28); return t;
+}
+function makeSkyTexture() {
+  const c = document.createElement('canvas'); c.width = 8; c.height = 256;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0, '#4E8FD0'); grd.addColorStop(0.55, '#9CC9EC'); grd.addColorStop(1, '#DCEBF2');
+  g.fillStyle = grd; g.fillRect(0, 0, 8, 256);
+  return new THREE.CanvasTexture(c);
+}
+function makeMountainTexture() {
+  const W = 2048, H = 512; const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const range = (baseY, amp, step, color) => {
+    g.fillStyle = color; g.beginPath(); g.moveTo(0, H); g.lineTo(0, baseY);
+    let x = 0; while (x < W) { x += step * (0.6 + Math.random() * 0.8); g.lineTo(x, baseY - Math.random() * amp); }
+    g.lineTo(W, H); g.closePath(); g.fill();
+  };
+  range(H * 0.52, 140, 150, '#6D8296');  // munți în spate (mai deschiși = ceață)
+  range(H * 0.66, 170, 120, '#51697F');  // munți în față
+  range(H * 0.80, 90, 90, '#3C566B');    // dealuri aproape
+  const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.repeat.set(3, 1); return t;
+}
+
+function Backdrop() {
+  const sky = useMemo(() => makeSkyTexture(), []);
+  const mts = useMemo(() => makeMountainTexture(), []);
+  return (
+    <group>
+      <mesh>
+        <sphereGeometry args={[320, 32, 16]} />
+        <meshBasicMaterial map={sky} side={THREE.BackSide} fog={false} />
+      </mesh>
+      <mesh position={[0, 7, 0]}>
+        <cylinderGeometry args={[150, 150, 60, 64, 1, true]} />
+        <meshBasicMaterial map={mts} side={THREE.BackSide} transparent fog />
+      </mesh>
+    </group>
+  );
+}
+function Ground() {
+  const grass = useMemo(() => makeGrassTexture(), []);
+  return (
+    <mesh position={[0, -0.26, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <planeGeometry args={[600, 600]} />
+      <meshStandardMaterial map={grass} roughness={1} metalness={0} />
+    </mesh>
+  );
+}
+
 // Vederea „ideală" a unui pion: camera pe LATURA lui, privind peste tablă,
 // astfel încât pionul activ e cel mai aproape de cameră (latura lui în față).
 const easeCubic = (t) => 1 - Math.pow(1 - t, 3);
@@ -388,8 +448,8 @@ export default function Board3D({ game, dice, rollNonce }) {
   return (
     <div className="canvas3d">
       <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }}>
-        <color attach="background" args={['#0B2E1E']} />
-        <fog attach="fog" args={['#0B2E1E', 34, 95]} />
+        <color attach="background" args={['#9CC9EC']} />
+        <fog attach="fog" args={['#CFE3EA', 90, 260]} />
         <PerspectiveCamera makeDefault position={[0, 20, 26]} fov={42} />
         <OrbitControls ref={controls} target={[0, 0, 0]} enablePan={false} minDistance={10} maxDistance={60}
           maxPolarAngle={1.4} minPolarAngle={0.15} enableDamping dampingFactor={0.08} />
@@ -401,16 +461,9 @@ export default function Board3D({ game, dice, rollNonce }) {
           shadow-mapSize-width={1024} shadow-mapSize-height={1024}
           shadow-camera-left={-20} shadow-camera-right={20} shadow-camera-top={20} shadow-camera-bottom={-20} />
 
-        {/* masă de pâslă verde, sub și în jurul tablei */}
-        <mesh position={[0, -0.26, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-          <planeGeometry args={[70, 70]} />
-          <meshStandardMaterial color="#15683F" roughness={0.98} metalness={0} />
-        </mesh>
-        {/* margine mai închisă în jurul tablei (efect de „ramă" pe masă) */}
-        <mesh position={[0, -0.25, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-          <planeGeometry args={[TILE * 12.6, TILE * 12.6]} />
-          <meshStandardMaterial color="#0F5433" roughness={0.98} />
-        </mesh>
+        {/* decor: cer + munți + iarbă */}
+        <Backdrop />
+        <Ground />
 
         {/* suprafața centrală deschisă (sub blaturile căsuțelor) */}
         <mesh position={[0, -0.18, 0]} receiveShadow>
