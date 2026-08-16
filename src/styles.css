@@ -43,7 +43,11 @@ button { font-family: inherit; cursor: pointer; }
 .pchip { display: flex; align-items: center; gap: 10px; background: #F6F6F3; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
 .dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.15); }
 
-/* ---------- Board ---------- */
+/* ---------- Board 3D ---------- */
+.canvas3d { width: 100%; height: min(64vh, 460px); border-radius: 14px; overflow: hidden;
+  border: 2px solid var(--ink); box-shadow: 0 6px 24px rgba(0,0,0,0.12); touch-action: none; background: #E7E6E1; }
+
+/* ---------- Board (2D, fallback) ---------- */
 .board { display: grid; grid-template-columns: repeat(11, 1fr); grid-template-rows: repeat(11, 1fr);
   aspect-ratio: 1/1; width: 100%; gap: 0; background: var(--board); border-radius: 12px; padding: 0;
   border: 2px solid var(--ink); overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,0.12); }

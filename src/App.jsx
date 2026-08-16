@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { sfx } from './sfx.js';
+import Board3D from './three/Board3D.jsx';
 import { BOARD, GROUPS } from './game/board.js';
 import { gridPos, isCorner } from './game/layout.js';
 import {
@@ -174,7 +175,9 @@ function Table({ game, setGame }) {
 
   return (
     <div className="wrap">
-      <Board game={game} />
+      <Suspense fallback={<div className="canvas3d" style={{ display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Se încarcă tabla 3D…</div>}>
+        <Board3D game={game} />
+      </Suspense>
 
       <div className="hud">
         <div className="turnbar">
