@@ -146,7 +146,25 @@ function Table({ game, setGame }) {
   const [manageOpen, setManageOpen] = useState(false);
   const [shownDice, setShownDice] = useState(null);
   const [rollNonce, setRollNonce] = useState(0);
+  const [immersive, setImmersive] = useState(false);
+  const wrapRef = useRef(null);
   const me = currentPlayer(game);
+
+  const toggleImmersive = () => {
+    const el = wrapRef.current;
+    if (!immersive) {
+      setImmersive(true);
+      el?.requestFullscreen?.().catch(() => {});
+    } else {
+      setImmersive(false);
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    }
+  };
+  useEffect(() => {
+    const onFs = () => { if (!document.fullscreenElement) setImmersive(v => v && false); };
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
 
   const [muted, setMuted] = useState(false);
   const toggleMute = () => { const m = !muted; setMuted(m); sfx.setMuted(m); };
@@ -180,7 +198,10 @@ function Table({ game, setGame }) {
   const myProps = me ? BOARD.map((sq, i) => i).filter(i => game.ownership?.[i] === me.id) : [];
 
   return (
-    <div className="wrap">
+    <div className={`wrap game ${immersive ? 'immersive' : ''}`} ref={wrapRef}>
+      <button className="fsBtn" onClick={toggleImmersive} aria-label={immersive ? 'Ieși din ecran complet' : 'Ecran complet'}>
+        {immersive ? '✕' : '⛶'}
+      </button>
       <Suspense fallback={<div className="canvas3d" style={{ display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Se încarcă tabla 3D…</div>}>
         <Board3D game={game} dice={shownDice ?? game.dice} rollNonce={rollNonce} />
       </Suspense>
