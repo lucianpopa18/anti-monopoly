@@ -112,6 +112,9 @@ export function startGame(state, { firstPlayerId } = {}) {
 export function applyRoll(state, dice) {
   const s = clone(state);
   if (s.status !== 'playing' || s.pending) return s;
+  // A aruncat deja o dată fără dublă → nu mai poate arunca (trebuie să încheie tura).
+  // La dublă, s.dice are valori egale, deci aruncarea următoare e permisă.
+  if (s.dice && s.dice[0] !== s.dice[1]) return s;
   const p = currentPlayer(s);
   if (!p || p.bankrupt) return s;
 

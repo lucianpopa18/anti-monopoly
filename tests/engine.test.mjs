@@ -38,6 +38,20 @@ test('aruncare mută pionul și oferă cumpărarea unei proprietăți libere', (
   assert.equal(s.pending.idx, 1);
 });
 
+test('nu poți arunca de două ori fără dublă (aceeași tură)', () => {
+  let g = twoPlayerGame();
+  const first = g.turn;
+  g = applyRoll(g, [3, 1]); // 4 pași, fără dublă
+  const posAfter = currentPlayer(g).pos;
+  g = applyDeclineBuy(g); // dacă a picat pe proprietate, curăță; altfel no-op
+  // dacă a rămas licitație, o rezolvăm rapid (pasează amândoi)
+  if (g.pending?.type === 'auction') { g.pending = null; }
+  const g2 = applyRoll(g, [5, 2]); // a doua aruncare — trebuie ignorată
+  assert.equal(g2.turn, first);
+  assert.equal(currentPlayer(g2).pos, posAfter); // nu s-a mai mișcat
+  assert.deepEqual(g2.dice, [3, 1]); // zarul a rămas cel de la prima aruncare
+});
+
 test('cumpărare scade banii și setează proprietarul', () => {
   let g = twoPlayerGame();
   g = applyRoll(g, [1, 0]);

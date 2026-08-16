@@ -166,8 +166,9 @@ function Table({ game, setGame }) {
   const trade = game.pending?.type === 'trade' ? game.pending : null;
   const debt = game.debt || null;
   const taxOpts = taxPending ? incomeTaxOptions(game, me.id) : null;
-  const canRoll = !game.pending && !game.debt && !rolling;
   const rolledDouble = game.dice && game.dice[0] === game.dice[1] && !me?.inJail;
+  // Poate arunca doar dacă n-a aruncat încă în tura asta SAU tocmai a dat dublă.
+  const canRoll = !game.pending && !game.debt && !rolling && (!game.dice || rolledDouble);
   const buildable = me ? buildableFor(game, me.id) : [];
   const myProps = me ? BOARD.map((sq, i) => i).filter(i => game.ownership?.[i] === me.id) : [];
 
@@ -227,10 +228,12 @@ function Table({ game, setGame }) {
         ) : debt ? null : (
           <>
             <div className="actions">
-              <button className="btn" onClick={roll} disabled={!canRoll}>
-                {rolling ? '…' : game.dice ? (rolledDouble ? 'Dublă! Mai arunci 🎲' : '🎲 Aruncă') : '🎲 Aruncă zarul'}
-              </button>
-              {game.dice && <button className="btn ghost" onClick={endTurn}>{rolledDouble ? 'Continuă →' : 'Termină tura →'}</button>}
+              {(!game.dice || rolledDouble) && (
+                <button className="btn" onClick={roll} disabled={!canRoll}>
+                  {rolling ? '…' : rolledDouble ? 'Dublă! Mai arunci 🎲' : '🎲 Aruncă zarul'}
+                </button>
+              )}
+              {game.dice && !rolledDouble && <button className="btn" onClick={endTurn}>Termină tura →</button>}
             </div>
             <div className="actions" style={{ marginTop: 8 }}>
               {buildable.length > 0 && (
