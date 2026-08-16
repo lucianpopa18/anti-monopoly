@@ -115,6 +115,7 @@ export function applyRoll(state, dice) {
   // A aruncat deja o dată fără dublă → nu mai poate arunca (trebuie să încheie tura).
   // La dublă, s.dice are valori egale, deci aruncarea următoare e permisă.
   if (s.dice && s.dice[0] !== s.dice[1]) return s;
+  s.lastCard = null; // bannerul cărții e valabil doar pentru mutarea curentă
   const p = currentPlayer(s);
   if (!p || p.bankrupt) return s;
 
@@ -566,6 +567,7 @@ function finalizeAuction(s) {
 export function applyEndTurn(state) {
   const s = clone(state);
   if (s.status !== 'playing' || s.pending || s.debt) return s;
+  s.lastCard = null; // ascunde bannerul cărții când se schimbă tura
   // dublă → același jucător mai joacă o dată (dacă nu e în închisoare)
   const p = currentPlayer(s);
   const rolledDouble = s.dice && s.dice[0] === s.dice[1] && !p?.inJail && s.doublesCount > 0;
