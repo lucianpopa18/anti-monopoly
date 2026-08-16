@@ -144,6 +144,8 @@ function Table({ game, setGame }) {
   const [rolling, setRolling] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
+  const [shownDice, setShownDice] = useState(null);
+  const [rollNonce, setRollNonce] = useState(0);
   const me = currentPlayer(game);
 
   const [muted, setMuted] = useState(false);
@@ -151,9 +153,13 @@ function Table({ game, setGame }) {
 
   const roll = () => {
     if (game.pending || game.debt || rolling) return;
+    const d = rollDicePair();
     sfx.roll();
+    setShownDice(d);
+    setRollNonce(n => n + 1);
     setRolling(true);
-    setTimeout(() => { setGame(g => applyRoll(g, rollDicePair())); setRolling(false); }, 450);
+    // zarurile se rostogolesc ~0.85s, apoi aplicăm mutarea (pionul sare după)
+    setTimeout(() => { setGame(g => applyRoll(g, d)); setRolling(false); }, 850);
   };
   const buy = () => { sfx.pay(); setGame(g => applyBuy(g)); };
   const decline = () => setGame(g => applyDeclineBuy(g));
@@ -176,7 +182,7 @@ function Table({ game, setGame }) {
   return (
     <div className="wrap">
       <Suspense fallback={<div className="canvas3d" style={{ display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Se încarcă tabla 3D…</div>}>
-        <Board3D game={game} />
+        <Board3D game={game} dice={shownDice ?? game.dice} rollNonce={rollNonce} />
       </Suspense>
 
       <div className="hud">
