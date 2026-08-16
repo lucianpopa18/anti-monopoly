@@ -47,7 +47,7 @@ button { font-family: inherit; cursor: pointer; }
 .canvas3d { width: 100%; height: min(70vh, 540px); border-radius: 14px; overflow: hidden;
   border: 2px solid var(--ink); box-shadow: 0 6px 24px rgba(0,0,0,0.12); touch-action: none; background: #9CC9EC; }
 .wrap.game { position: relative; }
-.topBtns { position: absolute; top: 10px; right: 14px; z-index: 30; display: flex; gap: 8px; }
+.topBtns { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 10px); right: 14px; z-index: 30; display: flex; gap: 8px; }
 .fsBtn { width: 42px; height: 42px; border-radius: 12px;
   border: 1px solid var(--line2); background: rgba(255,255,255,0.9); color: var(--ink); font-size: 18px; font-weight: 800;
   box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
@@ -57,7 +57,6 @@ body.immersive-lock { overflow: hidden; overscroll-behavior: none; background: #
 .wrap.game.immersive { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; height: 100dvh;
   z-index: 100; max-width: none; margin: 0; padding: 0; overflow: hidden; background: #0E3A2A; }
 .wrap.game.immersive .canvas3d { position: absolute; inset: 0; width: 100%; height: 100%; border: none; border-radius: 0; box-shadow: none; }
-.wrap.game.immersive .topBtns { top: calc(10px + env(safe-area-inset-top)); }
 .wrap.game.immersive .fsBtn { background: rgba(14,32,22,0.6); color: #F3EFE6; border-color: rgba(255,255,255,0.18); backdrop-filter: blur(4px); }
 .wrap.game.immersive .turnbar { display: none; } /* bara de tură eliminată în full screen */
 
@@ -69,8 +68,8 @@ body.immersive-lock { overflow: hidden; overscroll-behavior: none; background: #
 .wrap.game.immersive .hud > * { pointer-events: auto; }
 .wrap.game.immersive .turnbar { display: none; }
 .wrap.game.immersive .dice { display: none; } /* zarurile 3D sunt pe tablă */
-/* rânduri de acțiuni → cluster compact, aliniat la dreapta */
-.wrap.game.immersive .actions { width: auto; justify-content: flex-end; gap: 8px; }
+/* acțiuni → stivuite VERTICAL, aliniate la dreapta (nu peste banii din stânga) */
+.wrap.game.immersive .actions { width: auto; flex-direction: column; align-items: flex-end; gap: 8px; }
 .wrap.game.immersive .actions .btn { flex: 0 0 auto; width: auto; min-width: 0; padding: 0 16px; min-height: 46px;
   font-size: 15px; border-radius: 14px; box-shadow: 0 5px 16px rgba(0,0,0,0.4); }
 .wrap.game.immersive .btn { background: var(--gold, #E0A82E); color: #2A2110; }
