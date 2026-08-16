@@ -178,54 +178,78 @@ const TARGET_EULER = {
 };
 const targetQuat = (v) => new THREE.Quaternion().setFromEuler(new THREE.Euler(...TARGET_EULER[v]));
 
-function Die({ value, rollNonce, origin }) {
+function Die({ value, rollNonce, turnId, home }) {
   const ref = useRef();
   const mats = useMemo(() => FACE_VALUES.map(v => new THREE.MeshStandardMaterial({ map: makePipTexture(v), roughness: 0.4 })), []);
-  const st = useRef({ nonce: rollNonce, start: -1, axis: new THREE.Vector3(1, 0, 0), spins: 0 });
+  const st = useRef({
+    nonce: rollNonce, turn: turnId, phase: 'idle', start: 0,
+    from: new THREE.Vector3(...home), land: new THREE.Vector3(...home),
+    retFrom: new THREE.Vector3(...home), axis: new THREE.Vector3(1, 0, 0), spins: 6,
+  });
 
+  // aruncare → aterizează într-o poziție ALEATORIE pe tablă
   if (rollNonce !== st.current.nonce) {
-    st.current.nonce = rollNonce;
-    st.current.start = performance.now();
-    st.current.axis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+    st.current.nonce = rollNonce; st.current.phase = 'rolling'; st.current.start = performance.now();
+    st.current.axis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
     st.current.spins = 5 + Math.floor(Math.random() * 4);
-    // punct de „aruncare" (mai sus și mai spre cameră), de unde cade spre origin
-    st.current.from = new THREE.Vector3(origin[0] + (Math.random() - 0.5) * 2, origin[1] + 5, origin[2] + 3.5);
+    const lx = (Math.random() - 0.5) * 8, lz = (Math.random() - 0.5) * 8;
+    st.current.land.set(lx, home[1], lz);
+    st.current.from.set(lx + (Math.random() - 0.5) * 2, home[1] + 5, lz + 3.5);
+  }
+  // schimbare tură → zarurile revin la mijloc (acasă)
+  if (turnId !== st.current.turn) {
+    st.current.turn = turnId;
+    if (st.current.phase !== 'idle') {
+      st.current.phase = 'returning'; st.current.start = performance.now();
+      st.current.retFrom.copy(ref.current ? ref.current.position : st.current.land);
+    }
   }
 
   useFrame(() => {
     const m = ref.current; if (!m) return;
-    const tgt = targetQuat(value || 1);
-    const s = st.current;
-    if (s.start < 0) { m.quaternion.copy(tgt); m.position.set(origin[0], origin[1], origin[2]); return; }
-    const dur = 1150;
-    const T = Math.min(1, (performance.now() - s.start) / dur);
-    const ease = 1 - Math.pow(1 - T, 3);
-    // rotire (tumble) care se stinge → aterizează exact pe valoare
-    const tumbleAngle = (1 - ease) * s.spins * Math.PI * 2;
-    const tumble = new THREE.Quaternion().setFromAxisAngle(s.axis, tumbleAngle);
-    m.quaternion.copy(tgt).premultiply(tumble);
-    // traiectorie: din punctul de aruncare spre origin, cu 3 sărituri care scad
-    const ox = s.from.x + (origin[0] - s.from.x) * ease;
-    const oz = s.from.z + (origin[2] - s.from.z) * ease;
-    const bounce = Math.abs(Math.sin(T * Math.PI * 3)) * (1 - T) * 2.2;
-    const drop = s.from.y + (origin[1] - s.from.y) * ease;
-    m.position.set(ox, Math.max(origin[1], drop) + bounce, oz);
-    if (T >= 1) s.start = -1;
+    const tgt = targetQuat(value || 1); const s = st.current;
+
+    if (s.phase === 'idle') { m.position.set(home[0], home[1], home[2]); m.quaternion.copy(tgt); return; }
+
+    if (s.phase === 'rolling') {
+      const T = Math.min(1, (performance.now() - s.start) / 1150), ease = 1 - Math.pow(1 - T, 3);
+      const tumble = new THREE.Quaternion().setFromAxisAngle(s.axis, (1 - ease) * s.spins * Math.PI * 2);
+      m.quaternion.copy(tgt).premultiply(tumble);
+      const ox = s.from.x + (s.land.x - s.from.x) * ease, oz = s.from.z + (s.land.z - s.from.z) * ease;
+      const bounce = Math.abs(Math.sin(T * Math.PI * 3)) * (1 - T) * 2.2;
+      const drop = s.from.y + (s.land.y - s.from.y) * ease;
+      m.position.set(ox, Math.max(s.land.y, drop) + bounce, oz);
+      if (T >= 1) { s.phase = 'rest'; m.position.copy(s.land); }
+      return;
+    }
+    if (s.phase === 'rest') { m.position.copy(s.land); m.quaternion.copy(tgt); return; }
+
+    if (s.phase === 'returning') {
+      const T = Math.min(1, (performance.now() - s.start) / 650), ease = 1 - Math.pow(1 - T, 3);
+      m.position.set(
+        s.retFrom.x + (home[0] - s.retFrom.x) * ease,
+        s.retFrom.y + (home[1] - s.retFrom.y) * ease + Math.sin(T * Math.PI) * 0.6,
+        s.retFrom.z + (home[2] - s.retFrom.z) * ease,
+      );
+      m.quaternion.copy(tgt);
+      if (T >= 1) { s.phase = 'idle'; m.position.set(home[0], home[1], home[2]); }
+      return;
+    }
   });
 
   return (
-    <mesh ref={ref} position={origin} castShadow material={mats}>
+    <mesh ref={ref} position={home} castShadow material={mats}>
       <boxGeometry args={[0.8, 0.8, 0.8]} />
     </mesh>
   );
 }
 
-function Dice3D({ dice, rollNonce }) {
+function Dice3D({ dice, rollNonce, turnId }) {
   if (!dice) return null;
   return (
     <group>
-      <Die value={dice[0]} rollNonce={rollNonce} origin={[-0.9, 0.55, 3.2]} />
-      <Die value={dice[1]} rollNonce={rollNonce} origin={[0.9, 0.55, 3.2]} />
+      <Die value={dice[0]} rollNonce={rollNonce} turnId={turnId} home={[-0.9, 0.55, 0]} />
+      <Die value={dice[1]} rollNonce={rollNonce} turnId={turnId} home={[0.9, 0.55, 0]} />
     </group>
   );
 }
@@ -399,7 +423,7 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
 
     if (s.phase === 'dice') {
       const el = now - s.t0, IN = 340, HOLD_END = 1150;
-      const closePos = new THREE.Vector3(2.6, 2.8, 8.6), closeTgt = new THREE.Vector3(0, 0.6, 3.2);
+      const closePos = new THREE.Vector3(3, 7.5, 15), closeTgt = new THREE.Vector3(0, 0.4, 0);
       if (el < IN) { const t = easeCubic(el / IN); camera.position.copy(s.fromPos).lerp(closePos, t); tgt.copy(s.fromTgt).lerp(closeTgt, t); }
       else if (el < HOLD_END) { camera.position.copy(closePos); tgt.copy(closeTgt); }
       else { s.phase = 'track'; s.trackT0 = now; }
@@ -455,7 +479,7 @@ export default function Board3D({ game, dice, rollNonce }) {
           maxPolarAngle={1.4} minPolarAngle={0.15} enableDamping dampingFactor={0.08} />
         <CinematicDirector rollNonce={rollNonce} controls={controls} pawnPos={pawnPos} pawnMoving={pawnMoving}
           activeTile={game.players.find(p => p.id === game.turn)?.pos ?? 0} turnId={game.turn} />
-        <Dice3D dice={dice} rollNonce={rollNonce} />
+        <Dice3D dice={dice} rollNonce={rollNonce} turnId={game.turn} />
         <ambientLight intensity={0.7} />
         <directionalLight position={[10, 22, 12]} intensity={1.4} castShadow
           shadow-mapSize-width={1024} shadow-mapSize-height={1024}
