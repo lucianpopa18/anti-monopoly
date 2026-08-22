@@ -208,7 +208,8 @@ function resolveLanding(s, p, dice) {
 function drawCard(s, p, fromMove) {
   const deck = deckFor(p.role);
   const card = deck[Math.floor(Math.random() * deck.length)];
-  s.lastCard = { text: card.text, role: p.role };
+  s.cardSeq = (s.cardSeq || 0) + 1; // id unic per tragere → pop-up-ul știe când e o carte nouă
+  s.lastCard = { text: card.text, role: p.role, seq: s.cardSeq, money: (typeof card.money === 'number' ? card.money : null), who: p.name };
   log(s, `${p.name} ${p.role === 'competitor' ? '🟢' : '🔵'}: „${card.text}"`);
 
   if (typeof card.money === 'number') p.money += card.money;

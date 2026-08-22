@@ -140,6 +140,28 @@ function Lobby({ game, setGame }) {
 }
 
 /* ---------------- TABLA + JOCUL ---------------- */
+// Pop-up cu cartonașul tras: card alb de joc, cu eticheta rolului și textul.
+function CardPopup({ card, onClose }) {
+  const isComp = card.role === 'competitor';
+  const accent = isComp ? '#2E9E5B' : '#2E5BD8';
+  const label = isComp ? 'Competitor' : 'Monopolist';
+  const m = card.money;
+  return (
+    <div className="cardPopupBackdrop" onClick={onClose}>
+      <div className="cardPopup" onClick={(e) => e.stopPropagation()}>
+        <div className="cardPopupTag" style={{ color: accent, borderColor: accent }}>{label}</div>
+        <p className="cardPopupText">{card.text}</p>
+        {m != null && m !== 0 && (
+          <div className="cardPopupAmount" style={{ color: m > 0 ? '#1E9E4E' : '#D23B3B' }}>
+            {m > 0 ? '+' : '−'}€{Math.abs(m)}
+          </div>
+        )}
+        <button className="btn cardPopupBtn" onClick={onClose}>OK</button>
+      </div>
+    </div>
+  );
+}
+
 function Table({ game, setGame }) {
   const [rolling, setRolling] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
@@ -147,6 +169,12 @@ function Table({ game, setGame }) {
   const [shownDice, setShownDice] = useState(null);
   const [rollNonce, setRollNonce] = useState(0);
   const [immersive, setImmersive] = useState(false);
+  // Pop-up animat cu cartonașul tras (apare când se trage o carte nouă — seq unic).
+  const [cardPopup, setCardPopup] = useState(null);
+  useEffect(() => {
+    if (game.lastCard && game.lastCard.seq) setCardPopup(game.lastCard);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.lastCard?.seq]);
   const wrapRef = useRef(null);
   const me = currentPlayer(game);
 
@@ -228,11 +256,7 @@ function Table({ game, setGame }) {
           </div>
         )}
 
-        {game.lastCard && !game.pending && (
-          <div className="cardBanner">
-            🃏 {game.lastCard.role === 'competitor' ? '🟢' : '🔵'} {game.lastCard.text}
-          </div>
-        )}
+        {cardPopup && <CardPopup card={cardPopup} onClose={() => setCardPopup(null)} />}
 
         {debt && (
           <div className="debtBanner">
