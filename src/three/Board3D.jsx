@@ -327,9 +327,10 @@ function cardSlotPos(sign) {
   return { x: (cx / S - 0.5) * size, z: (cy / S - 0.5) * size };
 }
 
-// Pachet de cărți pe tablă (teanc de cartonașe). Cartea de sus (colorată pe rol)
-// se ridică și coboară când se trage o carte de rolul respectiv.
-function CardDeck({ sign, color, myRole, seq, cardRole }) {
+// Pachet de cărți pe tablă (teanc de cartonașe ALBE cu numele rolului scris pe
+// spate, ca la cărțile reale). Cartea de sus se ridică când se trage o carte
+// de rolul respectiv.
+function CardDeck({ sign, color, label, myRole, seq, cardRole }) {
   const { x, z } = cardSlotPos(sign);
   const top = useRef();
   const lift = useRef(0);
@@ -349,13 +350,18 @@ function CardDeck({ sign, color, myRole, seq, cardRole }) {
     <group position={[x, 0.04, z]} rotation={[0, 0.19, 0]}>
       {Array.from({ length: N }).map((_, i) => (
         <RoundedBox key={i} args={[3.5, 0.06, 2.3]} radius={0.05} smoothness={2} position={[0, 0.06 + i * 0.06, 0]} castShadow>
-          <meshStandardMaterial color="#F7F3EA" roughness={0.75} />
+          <meshStandardMaterial color="#FBF9F3" roughness={0.75} />
         </RoundedBox>
       ))}
       <group ref={top} position={[0, 0.42, 0]}>
         <RoundedBox args={[3.5, 0.08, 2.3]} radius={0.05} smoothness={2} castShadow>
-          <meshStandardMaterial color={color} roughness={0.55} />
+          <meshStandardMaterial color="#FDFCF8" roughness={0.6} />
         </RoundedBox>
+        {/* numele rolului scris pe spatele cărții de sus, culcat pe carte */}
+        <Text position={[0, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.44}
+          color={color} anchorX="center" anchorY="middle" maxWidth={3.2}>
+          {label}
+        </Text>
       </group>
     </group>
   );
@@ -588,8 +594,8 @@ export default function Board3D({ game, dice, rollNonce }) {
         </mesh>
 
         <CenterPiece />
-        <CardDeck sign={-1} color="#2E5BD8" myRole="monopolist" seq={game.lastCard?.seq || 0} cardRole={game.lastCard?.role} />
-        <CardDeck sign={1} color="#2E9E5B" myRole="competitor" seq={game.lastCard?.seq || 0} cardRole={game.lastCard?.role} />
+        <CardDeck sign={-1} color="#2E5BD8" label="Monopolist" myRole="monopolist" seq={game.lastCard?.seq || 0} cardRole={game.lastCard?.role} />
+        <CardDeck sign={1} color="#2E9E5B" label="Competitor" myRole="competitor" seq={game.lastCard?.seq || 0} cardRole={game.lastCard?.role} />
         {BOARD.map((_, i) => <Tile key={i} i={i} game={game} />)}
         {players.map((p, i) => (
           <Pawn key={p.id} player={p} offset={slotOffset(i, players.length)}
