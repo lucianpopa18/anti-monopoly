@@ -9,11 +9,21 @@ import {
   applyBuild, buildableFor, houseCost, applyPayIncomeTax, incomeTaxOptions,
   canMortgage, applyMortgage, applyUnmortgage, applySellHouse,
   mustBankrupt, applyDeclareBankrupt, proposeTrade, applyAcceptTrade, applyDeclineTrade,
-  applyBid, applyPassAuction,
+  applyBid, applyPassAuction, randomCode,
 } from './game/engine.js';
+import { Room, newId } from './net/room.js';
+
+// Acțiuni apelate prin nume — folosit de dispatch (local aplică direct, online trimite gazdei).
+const ENGINE = {
+  startGame, applyBuy, applyDeclineBuy, applyEndTurn, applyBuild, applyPayIncomeTax,
+  applyBid, applyPassAuction, applyAcceptTrade, applyDeclineTrade, applyMortgage,
+  applyUnmortgage, applySellHouse, proposeTrade, applyDeclareBankrupt,
+};
 
 export default function App() {
   const [game, setGame] = useState(null);
+  const [net, setNet] = useState(null);   // Room online; null = local (un telefon)
+  const [myId, setMyId] = useState(null); // id-ul jucătorului de pe ACEST telefon (online)
 
   // Sunete contextuale la schimbări de stare (carte trasă / câștig).
   const lastCardRef = useRef(null);
@@ -25,10 +35,15 @@ export default function App() {
     if (game.status === 'ended' && !endedRef.current) { sfx.win(); endedRef.current = true; }
   }, [game]);
 
-  if (!game) return <Setup onStart={setGame} />;
-  if (game.status === 'lobby') return <Lobby game={game} setGame={setGame} />;
-  if (game.status === 'ended') return <WinnerScreen game={game} onRestart={() => setGame(null)} />;
-  return <Table game={game} setGame={setGame} />;
+  const goOnline = ({ net: n, myId: id }) => { setNet(n); setMyId(id); };
+  const leave = () => { if (net) net.leave(); setNet(null); setMyId(null); setGame(null); };
+
+  if (!game) return net
+    ? <div className="wrap"><div className="title" style={{ marginTop: 40, textAlign: 'center' }}>Se conectează…</div><div className="sub" style={{ textAlign: 'center' }}>Aștept starea camerei de la gazdă.</div><button className="btn ghost" style={{ width: '100%', marginTop: 16 }} onClick={leave}>Anulează</button></div>
+    : <Setup onStart={setGame} onOnline={goOnline} bindState={setGame} />;
+  if (game.status === 'lobby') return <Lobby game={game} setGame={setGame} net={net} myId={myId} onLeave={leave} />;
+  if (game.status === 'ended') return <WinnerScreen game={game} onRestart={leave} />;
+  return <Table game={game} setGame={setGame} net={net} myId={myId} onLeave={leave} />;
 }
 
 function WinnerScreen({ game, onRestart }) {
@@ -59,10 +74,16 @@ function WinnerScreen({ game, onRestart }) {
   );
 }
 
-/* ---------------- SETUP (local hot-seat) ---------------- */
-function Setup({ onStart }) {
+/* ---------------- SETUP (local hot-seat + online) ---------------- */
+function Setup({ onStart, onOnline, bindState }) {
+  const [tab, setTab] = useState('local'); // 'local' | 'online'
   const [names, setNames] = useState(['', '']);
   const [mode, setMode] = useState('classic');
+  // online
+  const [oName, setOName] = useState('');
+  const [oCode, setOCode] = useState('');
+  const [oMode, setOMode] = useState('classic');
+  const [oErr, setOErr] = useState('');
 
   const update = (i, v) => setNames(n => n.map((x, k) => (k === i ? v : x)));
   const add = () => names.length < 6 && setNames(n => [...n, '']);
@@ -78,10 +99,59 @@ function Setup({ onStart }) {
 
   const valid = names.map(n => n.trim()).filter(Boolean).length >= 2;
 
+  const createOnline = () => {
+    const name = oName.trim();
+    if (!name) { setOErr('Scrie-ți numele.'); return; }
+    const code = randomCode();
+    const id = newId();
+    const g = createGame({ code, hostName: name, mode: oMode, hostId: id });
+    const net = new Room({ code, myId: id, isHost: true, initialState: g, onState: bindState });
+    bindState(g);            // gazda vede lobby-ul imediat
+    onOnline({ net, myId: id });
+  };
+  const joinOnline = () => {
+    const name = oName.trim();
+    const code = oCode.trim().toUpperCase();
+    if (!name) { setOErr('Scrie-ți numele.'); return; }
+    if (code.length < 4) { setOErr('Cod de cameră invalid.'); return; }
+    const id = newId();
+    const net = new Room({ code, myId: id, isHost: false, initialState: null, onState: bindState, joinName: name });
+    onOnline({ net, myId: id });
+  };
+
   return (
     <div className="wrap">
       <div className="title">Anti<b>-Monopoly</b></div>
-      <div className="sub">Competiție vs Cartel · versiune de test (pe un telefon)</div>
+      <div className="sub">Competiție vs Cartel</div>
+
+      <div className="rolePick" style={{ marginBottom: 14 }}>
+        <button className={`roleBtn ${tab === 'local' ? 'comp on' : ''}`} onClick={() => setTab('local')}>📱 Un telefon<br /><small>pass &amp; play</small></button>
+        <button className={`roleBtn ${tab === 'online' ? 'mono on' : ''}`} onClick={() => setTab('online')}>🌐 Online<br /><small>fiecare pe telefonul lui</small></button>
+      </div>
+
+      {tab === 'online' && (
+        <>
+          <div className="panel">
+            <div style={{ fontWeight: 900, marginBottom: 10 }}>Numele tău</div>
+            <input className="field" placeholder="Numele tău" value={oName} onChange={e => { setOName(e.target.value); setOErr(''); }} maxLength={20} style={{ width: '100%' }} />
+            <div style={{ fontWeight: 900, margin: '16px 0 10px' }}>Mod de joc</div>
+            <div className="rolePick">
+              <button className={`roleBtn ${oMode === 'classic' ? 'comp on' : ''}`} onClick={() => setOMode('classic')}>Clasic<br /><small>ultimul rămas</small></button>
+              <button className={`roleBtn ${oMode === 'short' ? 'mono on' : ''}`} onClick={() => setOMode('short')}>Scurt<br /><small>o tabără falimentează</small></button>
+            </div>
+            <button className="btn" style={{ width: '100%', marginTop: 14 }} onClick={createOnline}>➕ Creează cameră</button>
+          </div>
+          <div className="panel">
+            <div style={{ fontWeight: 900, marginBottom: 10 }}>Intră într-o cameră</div>
+            <input className="field" placeholder="Cod cameră (ex: ABCD)" value={oCode} onChange={e => { setOCode(e.target.value.toUpperCase()); setOErr(''); }} maxLength={6} style={{ width: '100%', textTransform: 'uppercase', letterSpacing: '0.15em', fontWeight: 900 }} />
+            <button className="btn ghost" style={{ width: '100%', marginTop: 10 }} onClick={joinOnline}>Intră în cameră →</button>
+          </div>
+          {oErr && <p className="sub" style={{ color: 'var(--tax)', textAlign: 'center' }}>{oErr}</p>}
+        </>
+      )}
+
+      {tab === 'local' && (
+        <>
 
       <div className="panel">
         <div style={{ fontWeight: 900, marginBottom: 10 }}>Jucători (2–6)</div>
@@ -109,24 +179,38 @@ function Setup({ onStart }) {
       </div>
 
       <button className="btn" style={{ width: '100%' }} disabled={!valid} onClick={start}>Începe jocul 🎲</button>
+        </>
+      )}
     </div>
   );
 }
 
 /* ---------------- LOBBY (confirmă roluri) ---------------- */
-function Lobby({ game, setGame }) {
-  const start = () => setGame(startGame(game));
+function Lobby({ game, setGame, net, myId, onLeave }) {
+  const online = !!net;
+  const isHost = online ? game.hostId === myId : true;
+  const start = () => { if (online) net.dispatch('startGame'); else setGame(startGame(game)); };
+  const enough = game.players.length >= 2;
   return (
     <div className="wrap">
       <div className="title">Anti<b>-Monopoly</b></div>
       <div className="sub">Camera pregătită · {game.mode === 'classic' ? 'mod Clasic' : 'mod Scurt'}</div>
+
+      {online && (
+        <div className="panel" style={{ textAlign: 'center' }}>
+          <div style={{ color: 'var(--muted)', fontWeight: 800, fontSize: 13 }}>Cod cameră — dă-l celorlalți</div>
+          <div style={{ fontSize: 38, fontWeight: 900, letterSpacing: '0.2em', margin: '6px 0 2px' }}>{game.code}</div>
+          <div className="sub" style={{ margin: 0 }}>Ceilalți intră cu acest cod, de pe telefonul lor.</div>
+        </div>
+      )}
+
       <div className="panel">
-        <div style={{ fontWeight: 900, marginBottom: 10 }}>Jucători & roluri</div>
+        <div style={{ fontWeight: 900, marginBottom: 10 }}>Jucători & roluri {online ? `(${game.players.length})` : ''}</div>
         <div className="plist">
           {game.players.map(p => (
             <div className="pchip" key={p.id}>
               <span className="dot" style={{ background: p.color }} />
-              <b>{p.name}</b>
+              <b>{p.name}{p.id === myId ? ' (tu)' : ''}</b>
               <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontWeight: 800 }}>
                 {p.role === 'competitor' ? '🟢 Competitor' : '🔵 Monopolist'}
               </span>
@@ -134,7 +218,15 @@ function Lobby({ game, setGame }) {
           ))}
         </div>
       </div>
-      <button className="btn" style={{ width: '100%' }} onClick={start}>Pornește 🎲</button>
+
+      {isHost ? (
+        <button className="btn" style={{ width: '100%' }} disabled={!enough} onClick={start}>
+          {enough ? 'Pornește 🎲' : 'Așteaptă cel puțin 2 jucători…'}
+        </button>
+      ) : (
+        <div className="sub" style={{ textAlign: 'center', fontWeight: 800 }}>Aștepți ca gazda să pornească jocul…</div>
+      )}
+      {online && <button className="btn ghost" style={{ width: '100%', marginTop: 10 }} onClick={onLeave}>Ieși din cameră</button>}
     </div>
   );
 }
@@ -162,7 +254,8 @@ function CardPopup({ card, onClose }) {
   );
 }
 
-function Table({ game, setGame }) {
+function Table({ game, setGame, net, myId, onLeave }) {
+  const online = !!net;
   const [rolling, setRolling] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -177,6 +270,23 @@ function Table({ game, setGame }) {
   }, [game.lastCard?.seq]);
   const wrapRef = useRef(null);
   const me = currentPlayer(game);
+  const isMyTurn = online ? game.turn === myId : true;
+  // dispatch: local aplică direct; online trimite gazdei (care aplică + retrimite starea).
+  const dispatch = (fn, ...args) => {
+    if (net) net.dispatch(fn, ...args);
+    else setGame(g => ENGINE[fn](g, ...args));
+  };
+
+  // ONLINE: animă zarul când sosește o aruncare nouă (rollSeq crește în stare).
+  const rollSeqRef = useRef(game.rollSeq || 0);
+  useEffect(() => {
+    if (!online) return;
+    if ((game.rollSeq || 0) !== rollSeqRef.current) {
+      rollSeqRef.current = game.rollSeq || 0;
+      if (game.dice) { sfx.roll(); setShownDice(game.dice); setRollNonce(n => n + 1); }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.rollSeq]);
 
   const toggleImmersive = () => {
     const el = wrapRef.current;
@@ -203,6 +313,11 @@ function Table({ game, setGame }) {
 
   const roll = () => {
     if (game.pending || game.debt || rolling) return;
+    if (online) {
+      if (!isMyTurn) return;
+      net.dispatch('__roll'); // gazda generează zarul; animația pornește când sosește starea
+      return;
+    }
     const d = rollDicePair();
     sfx.roll();
     setShownDice(d);
@@ -211,11 +326,11 @@ function Table({ game, setGame }) {
     // zarurile se rostogolesc ~1.5s + pauză de reveal ~0.8s, apoi pionul se mișcă
     setTimeout(() => { setGame(g => applyRoll(g, d)); setRolling(false); }, 2300);
   };
-  const buy = () => { sfx.pay(); setGame(g => applyBuy(g)); };
-  const decline = () => setGame(g => applyDeclineBuy(g));
-  const endTurn = () => { setBuildOpen(false); setManageOpen(false); setGame(g => applyEndTurn(g)); };
-  const build = (idx) => { sfx.build(); setGame(g => applyBuild(g, idx)); };
-  const payTax = (mode) => { sfx.pay(); setGame(g => applyPayIncomeTax(g, mode)); };
+  const buy = () => { sfx.pay(); dispatch('applyBuy'); };
+  const decline = () => dispatch('applyDeclineBuy');
+  const endTurn = () => { setBuildOpen(false); setManageOpen(false); dispatch('applyEndTurn'); };
+  const build = (idx) => { sfx.build(); dispatch('applyBuild', idx); };
+  const payTax = (mode) => { sfx.pay(); dispatch('applyPayIncomeTax', mode); };
 
   const pendingSq = game.pending?.type === 'buy' ? BOARD[game.pending.idx] : null;
   const taxPending = game.pending?.type === 'incometax';
@@ -232,6 +347,7 @@ function Table({ game, setGame }) {
   return (
     <div className={`wrap game ${immersive ? 'immersive' : ''}`} ref={wrapRef}>
       <div className="topBtns">
+        {online && <button className="fsBtn" onClick={onLeave} aria-label="Ieși din cameră">🚪</button>}
         <button className="fsBtn" onClick={toggleMute} aria-label={muted ? 'Activează sunetul' : 'Oprește sunetul'}>{muted ? '🔇' : '🔊'}</button>
         <button className="fsBtn" onClick={toggleImmersive} aria-label={immersive ? 'Ieși din ecran complet' : 'Ecran complet'}>{immersive ? '✕' : '⛶'}</button>
       </div>
@@ -264,12 +380,18 @@ function Table({ game, setGame }) {
             <button className="btn" style={{ width: '100%', marginTop: 8 }} onClick={() => setManageOpen(true)}>🏦 Gestionează</button>
             {mustBankrupt(game, me.id) && (
               <button className="btn ghost" style={{ width: '100%', marginTop: 6, color: 'var(--tax)', borderColor: 'var(--tax)' }}
-                onClick={() => setGame(g => applyDeclareBankrupt(g))}>💥 Declar faliment</button>
+                onClick={() => dispatch('applyDeclareBankrupt')}>💥 Declar faliment</button>
             )}
           </div>
         )}
 
-        {pendingSq ? (
+        {online && !isMyTurn && !auction && !trade ? (
+          <div className="actions">
+            <div className="sub" style={{ width: '100%', textAlign: 'center', fontWeight: 800, margin: 0 }}>
+              Rândul lui {currentPlayer(game)?.name}… ⏳
+            </div>
+          </div>
+        ) : pendingSq ? (
           <div className="actions">
             <button className="btn" onClick={buy} disabled={me.money < pendingSq.price}>Cumpără {pendingSq.name} · €{pendingSq.price}</button>
             <button className="btn ghost" onClick={decline}>Refuz</button>
@@ -280,9 +402,9 @@ function Table({ game, setGame }) {
             <button className="btn ghost" onClick={() => payTax('percent')}>{taxOpts.pct}% active · €{taxOpts.percent}</button>
           </div>
         ) : auction ? (
-          <AuctionPanel game={game} setGame={setGame} auction={auction} />
+          <AuctionPanel game={game} dispatch={dispatch} auction={auction} />
         ) : trade ? (
-          <TradePanel game={game} setGame={setGame} trade={trade} />
+          <TradePanel game={game} dispatch={dispatch} trade={trade} />
         ) : debt ? null : (
           <>
             <div className="actions">
@@ -322,12 +444,12 @@ function Table({ game, setGame }) {
           </>
         )}
 
-        {manageOpen && <ManagePanel game={game} setGame={setGame} me={me} myProps={myProps} />}
+        {manageOpen && <ManagePanel game={game} dispatch={dispatch} me={me} myProps={myProps} />}
 
         <div className="moneyList">
           {game.players.map(p => (
             <span key={p.id} className={`moneyChip ${p.id === game.turn ? 'turn' : ''}`}>
-              <span className="dot" style={{ background: p.color }} /> {p.name}: €{p.money}
+              <span className="dot" style={{ background: p.color }} /> {p.name}{p.id === myId ? ' (tu)' : ''}: €{p.money}
             </span>
           ))}
         </div>
@@ -341,11 +463,11 @@ function Table({ game, setGame }) {
 }
 
 /* ---- Licitație ---- */
-function AuctionPanel({ game, setGame, auction }) {
+function AuctionPanel({ game, dispatch, auction }) {
   const sq = BOARD[auction.idx];
   const eligible = game.players.filter(p => !p.bankrupt && !auction.passed.includes(p.id));
-  const bid = (pid, amount) => setGame(g => applyBid(g, pid, amount));
-  const pass = (pid) => setGame(g => applyPassAuction(g, pid));
+  const bid = (pid, amount) => dispatch('applyBid', pid, amount);
+  const pass = (pid) => dispatch('applyPassAuction', pid);
   const high = auction.highBid;
   return (
     <div className="panel" style={{ marginBottom: 0 }}>
@@ -374,7 +496,7 @@ function AuctionPanel({ game, setGame, auction }) {
 }
 
 /* ---- Schimb: oferta primită ---- */
-function TradePanel({ game, setGame, trade }) {
+function TradePanel({ game, dispatch, trade }) {
   const from = game.players.find(p => p.id === trade.fromId);
   const to = game.players.find(p => p.id === trade.toId);
   const names = (idxs) => idxs.map(i => BOARD[i].name).join(', ') || '—';
@@ -387,24 +509,24 @@ function TradePanel({ game, setGame, trade }) {
       </div>
       <p className="sub" style={{ margin: '8px 0' }}>Decide {to.name}:</p>
       <div className="actions">
-        <button className="btn" onClick={() => setGame(g => applyAcceptTrade(g))}>Accept</button>
-        <button className="btn ghost" onClick={() => setGame(g => applyDeclineTrade(g))}>Refuz</button>
+        <button className="btn" onClick={() => dispatch('applyAcceptTrade')}>Accept</button>
+        <button className="btn ghost" onClick={() => dispatch('applyDeclineTrade')}>Refuz</button>
       </div>
     </div>
   );
 }
 
 /* ---- Gestionare: ipotecă / vânzare case / propunere schimb ---- */
-function ManagePanel({ game, setGame, me, myProps }) {
+function ManagePanel({ game, dispatch, me, myProps }) {
   const [tradeWith, setTradeWith] = useState(null);
   const [give, setGive] = useState([]);
   const [get, setGet] = useState([]);
   const [giveMoney, setGiveMoney] = useState('');
   const [getMoney, setGetMoney] = useState('');
 
-  const mortgage = (i) => setGame(g => applyMortgage(g, i));
-  const unmortgage = (i) => setGame(g => applyUnmortgage(g, i));
-  const sell = (i) => setGame(g => applySellHouse(g, i));
+  const mortgage = (i) => dispatch('applyMortgage', i);
+  const unmortgage = (i) => dispatch('applyUnmortgage', i);
+  const sell = (i) => dispatch('applySellHouse', i);
 
   const others = game.players.filter(p => p.id !== me.id && !p.bankrupt);
   const theirProps = tradeWith
@@ -413,10 +535,10 @@ function ManagePanel({ game, setGame, me, myProps }) {
   const myTradeable = myProps.filter(i => (game.buildings?.[i] || 0) === 0);
   const toggle = (arr, set, i) => set(arr.includes(i) ? arr.filter(x => x !== i) : [...arr, i]);
   const propose = () => {
-    setGame(g => proposeTrade(g, {
+    dispatch('proposeTrade', {
       toId: tradeWith, giveProps: give, getProps: get,
       giveMoney: Number(giveMoney) || 0, getMoney: Number(getMoney) || 0,
-    }));
+    });
   };
 
   return (

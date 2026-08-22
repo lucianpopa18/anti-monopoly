@@ -38,8 +38,8 @@ export function ownsWholeGroup(state, playerId, group) {
 }
 
 // ---------- creare / lobby ----------
-export function createGame({ code, hostName, hostRole = 'competitor', mode = 'classic' }) {
-  const host = makePlayer(hostName, hostRole);
+export function createGame({ code, hostName, hostRole = 'competitor', mode = 'classic', hostId }) {
+  const host = makePlayer(hostName, hostRole, hostId);
   return {
     code: code || randomCode(),
     mode,                     // 'classic' | 'short'
@@ -58,9 +58,9 @@ export function createGame({ code, hostName, hostRole = 'competitor', mode = 'cl
   };
 }
 
-export function makePlayer(name, role = 'competitor') {
+export function makePlayer(name, role = 'competitor', id) {
   return {
-    id: `p_${Math.random().toString(36).slice(2, 9)}`,
+    id: id || `p_${Math.random().toString(36).slice(2, 9)}`,
     name: String(name || 'Jucător').slice(0, 20),
     role,                       // 'competitor' | 'monopolist'
     color: PLAYER_COLORS[role],
@@ -73,11 +73,12 @@ export function makePlayer(name, role = 'competitor') {
   };
 }
 
-export function addPlayer(state, name, role) {
+export function addPlayer(state, name, role, id) {
   const s = clone(state);
   if (s.status !== 'lobby') return s;
+  if (id && s.players.some(x => x.id === id)) return s; // deja în cameră (rejoin)
   if (s.players.length >= 6) return s;
-  const p = makePlayer(name, role || suggestRole(s));
+  const p = makePlayer(name, role || suggestRole(s), id);
   s.players.push(p);
   log(s, `${p.name} s-a alăturat (${p.role === 'competitor' ? '🟢 Competitor' : '🔵 Monopolist'}).`);
   return s;
@@ -115,6 +116,7 @@ export function applyRoll(state, dice) {
   // A aruncat deja o dată fără dublă → nu mai poate arunca (trebuie să încheie tura).
   // La dublă, s.dice are valori egale, deci aruncarea următoare e permisă.
   if (s.dice && s.dice[0] !== s.dice[1]) return s;
+  s.rollSeq = (s.rollSeq || 0) + 1; // contor de aruncare (pt animația zarului în online)
   s.lastCard = null; // bannerul cărții e valabil doar pentru mutarea curentă
   const p = currentPlayer(s);
   if (!p || p.bankrupt) return s;
