@@ -318,6 +318,49 @@ function CenterPiece() {
   );
 }
 
+// Poziția 3D (x,z) a unui slot de carte, dedusă din geometria texturii centrale.
+function cardSlotPos(sign) {
+  const S = 1400, LOGO_ROT = -0.19, dist = S * 0.26, size = TILE * 9.35;
+  const perp = LOGO_ROT + Math.PI / 2;
+  const cx = S * 0.5 + sign * Math.cos(perp) * dist;
+  const cy = S * 0.5 + sign * Math.sin(perp) * dist;
+  return { x: (cx / S - 0.5) * size, z: (cy / S - 0.5) * size };
+}
+
+// Pachet de cărți pe tablă (teanc de cartonașe). Cartea de sus (colorată pe rol)
+// se ridică și coboară când se trage o carte de rolul respectiv.
+function CardDeck({ sign, color, myRole, seq, cardRole }) {
+  const { x, z } = cardSlotPos(sign);
+  const top = useRef();
+  const lift = useRef(0);
+  const seqRef = useRef(seq);
+  useFrame((_, dt) => {
+    if (seq !== seqRef.current) { seqRef.current = seq; if (cardRole === myRole) lift.current = 1; }
+    const g = top.current; if (!g) return;
+    if (lift.current > 0) {
+      lift.current = Math.max(0, lift.current - dt * 0.9);
+      const a = Math.sin((1 - lift.current) * Math.PI);
+      g.position.y = 0.42 + a * 1.0;
+      g.rotation.z = a * 0.28;
+    } else { g.position.y = 0.42; g.rotation.z = 0; }
+  });
+  const N = 6;
+  return (
+    <group position={[x, 0.04, z]} rotation={[0, 0.19, 0]}>
+      {Array.from({ length: N }).map((_, i) => (
+        <RoundedBox key={i} args={[3.5, 0.06, 2.3]} radius={0.05} smoothness={2} position={[0, 0.06 + i * 0.06, 0]} castShadow>
+          <meshStandardMaterial color="#F7F3EA" roughness={0.75} />
+        </RoundedBox>
+      ))}
+      <group ref={top} position={[0, 0.42, 0]}>
+        <RoundedBox args={[3.5, 0.08, 2.3]} radius={0.05} smoothness={2} castShadow>
+          <meshStandardMaterial color={color} roughness={0.55} />
+        </RoundedBox>
+      </group>
+    </group>
+  );
+}
+
 // ---------- DECOR: iarbă + cer + munți ----------
 function makeGrassTexture() {
   const S = 256; const c = document.createElement('canvas'); c.width = c.height = S;
@@ -545,6 +588,8 @@ export default function Board3D({ game, dice, rollNonce }) {
         </mesh>
 
         <CenterPiece />
+        <CardDeck sign={-1} color="#2E5BD8" myRole="monopolist" seq={game.lastCard?.seq || 0} cardRole={game.lastCard?.role} />
+        <CardDeck sign={1} color="#2E9E5B" myRole="competitor" seq={game.lastCard?.seq || 0} cardRole={game.lastCard?.role} />
         {BOARD.map((_, i) => <Tile key={i} i={i} game={game} />)}
         {players.map((p, i) => (
           <Pawn key={p.id} player={p} offset={slotOffset(i, players.length)}
