@@ -1,4 +1,7 @@
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* inputurile trebuie să permită totuși scrisul/selecția în câmp */
+input, textarea { -webkit-user-select: text; user-select: text; }
 :root {
   --page: #E7E6E1;
   --board: #FFFFFF;
