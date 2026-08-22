@@ -358,8 +358,9 @@ function CardDeck({ sign, color, label, myRole, seq, cardRole }) {
           <meshStandardMaterial color="#FDFCF8" roughness={0.6} />
         </RoundedBox>
         {/* numele rolului scris pe spatele cărții de sus, culcat pe carte */}
-        <Text position={[0, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.44}
-          color={color} anchorX="center" anchorY="middle" maxWidth={3.2}>
+        <Text position={[0, 0.11, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.44}
+          color={color} anchorX="center" anchorY="middle" maxWidth={3.2}
+          depthOffset={-4} renderOrder={2}>
           {label}
         </Text>
       </group>
