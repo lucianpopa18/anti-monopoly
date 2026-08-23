@@ -28,6 +28,12 @@ function log(state, text) {
 export function currentPlayer(state) {
   return state.players.find(p => p.id === state.turn) || null;
 }
+// Eveniment vizual (chirie / taxă / închisoare / START / fundație) → pop-up în UI.
+// Ca și lastCard: seq unic, ca pop-up-ul să apară o singură dată per eveniment.
+function event(state, ev) {
+  state.eventSeq = (state.eventSeq || 0) + 1;
+  state.lastEvent = { ...ev, seq: state.eventSeq };
+}
 export function ownerOf(state, idx) {
   const pid = state.ownership?.[idx];
   return pid ? state.players.find(p => p.id === pid) : null;
@@ -118,6 +124,7 @@ export function applyRoll(state, dice) {
   if (s.dice && s.dice[0] !== s.dice[1]) return s;
   s.rollSeq = (s.rollSeq || 0) + 1; // contor de aruncare (pt animația zarului în online)
   s.lastCard = null; // bannerul cărții e valabil doar pentru mutarea curentă
+  s.lastEvent = null; // evenimentul (chirie/taxă/etc) e valabil doar pentru mutarea curentă
   const p = currentPlayer(s);
   if (!p || p.bankrupt) return s;
 
@@ -145,6 +152,7 @@ export function applyRoll(state, dice) {
     if (s.doublesCount >= 3) {
       sendToJail(s, p);
       log(s, `${p.name} a dat 3 duble → la închisoare!`);
+      event(s, { kind: 'jail', who: p.name, reason: 'doubles' });
       s.doublesCount = 0;
       return s;
     }
@@ -180,15 +188,15 @@ function resolveLanding(s, p, dice) {
   const idx = p.pos;
   const sq = BOARD[idx];
 
-  if (idx === START) { p.money += LAND_START; log(s, `${p.name} aterizează pe START (+€${LAND_START}).`); return; }
+  if (idx === START) { p.money += LAND_START; log(s, `${p.name} aterizează pe START (+€${LAND_START}).`); event(s, { kind: 'start', who: p.name, amount: LAND_START }); return; }
   if (sq.type === 'corner') {
-    if (sq.kind === 'gotojail') { sendToJail(s, p); log(s, `${p.name} → Consiliul Concurenței: la închisoare!`); return; }
+    if (sq.kind === 'gotojail') { sendToJail(s, p); log(s, `${p.name} → Consiliul Concurenței: la închisoare!`); event(s, { kind: 'jail', who: p.name, reason: 'gotojail' }); return; }
     if (sq.kind === 'fundatia') { resolveFundatia(s, p, dice[0]); return; }
     return; // jail (vizită) / restul
   }
   if (sq.type === 'tax') {
     if (sq.kind === 'income') { s.pending = { type: 'incometax', idx }; return; } // alegere €200 / % active
-    p.money -= sq.amount; log(s, `${p.name} plătește ${sq.name} (−€${sq.amount}).`); return;
+    p.money -= sq.amount; log(s, `${p.name} plătește ${sq.name} (−€${sq.amount}).`); event(s, { kind: 'tax', who: p.name, name: sq.name, amount: sq.amount }); return;
   }
   if (sq.type === 'card') { drawCard(s, p, false); return; }
 
@@ -203,6 +211,7 @@ function resolveLanding(s, p, dice) {
     const rent = computeRent(s, idx, steps);
     p.money -= rent; owner.money += rent;
     log(s, `${p.name} plătește €${rent} chirie lui ${owner.name} (${sq.name}).`);
+    event(s, { kind: 'rent', who: p.name, owner: owner.name, amount: rent, idx });
   }
 }
 
@@ -242,8 +251,8 @@ function moveSimple(s, p, steps) {
 function resolveLandingAfterCard(s, p) {
   const sq = BOARD[p.pos];
   if (p.pos === START) { p.money += LAND_START; return; }
-  if (sq.type === 'tax') { if (sq.kind === 'income') { s.pending = { type: 'incometax', idx: p.pos }; } else p.money -= sq.amount; return; }
-  if (sq.type === 'corner' && sq.kind === 'gotojail') { sendToJail(s, p); return; }
+  if (sq.type === 'tax') { if (sq.kind === 'income') { s.pending = { type: 'incometax', idx: p.pos }; } else { p.money -= sq.amount; event(s, { kind: 'tax', who: p.name, name: sq.name, amount: sq.amount }); } return; }
+  if (sq.type === 'corner' && sq.kind === 'gotojail') { sendToJail(s, p); event(s, { kind: 'jail', who: p.name, reason: 'gotojail' }); return; }
   if (sq.type === 'corner' && sq.kind === 'fundatia') { return; }
   if (sq.type === 'property' || sq.type === 'transport' || sq.type === 'utility') {
     const owner = ownerOf(s, p.pos);
@@ -252,6 +261,7 @@ function resolveLandingAfterCard(s, p) {
     const rent = computeRent(s, p.pos, 7);
     p.money -= rent; owner.money += rent;
     log(s, `${p.name} plătește €${rent} chirie lui ${owner.name} (${sq.name}).`);
+    event(s, { kind: 'rent', who: p.name, owner: owner.name, amount: rent, idx: p.pos });
   }
 }
 
@@ -261,8 +271,10 @@ function resolveFundatia(s, p, die) {
     const gain = die === 1 ? 25 : die === 2 ? 50 : 0;
     if (gain > 0) { p.money += gain; log(s, `${p.name} la Fundație: zar ${die} → +€${gain}.`); }
     else log(s, `${p.name} la Fundație: zar ${die} → nimic.`);
+    event(s, { kind: 'fundatia', who: p.name, amount: gain, die });
   } else {
     p.money -= 160; log(s, `${p.name} (Monopolist) plătește €160 la Fundație.`);
+    event(s, { kind: 'fundatia', who: p.name, amount: -160, die });
   }
 }
 
@@ -571,6 +583,7 @@ export function applyEndTurn(state) {
   const s = clone(state);
   if (s.status !== 'playing' || s.pending || s.debt) return s;
   s.lastCard = null; // ascunde bannerul cărții când se schimbă tura
+  s.lastEvent = null;
   // dublă → același jucător mai joacă o dată (dacă nu e în închisoare)
   const p = currentPlayer(s);
   const rolledDouble = s.dice && s.dice[0] === s.dice[1] && !p?.inJail && s.doublesCount > 0;

@@ -301,6 +301,72 @@ function PropertyPopup({ info, canBuy, onBuy, onRefuse }) {
   );
 }
 
+// Înveliș generic pentru modale-card (licitație / schimb / construiește / gestionează / impozit).
+// onClose opțional: dacă lipsește, modalul e „obligatoriu" (trebuie luată o decizie din interior).
+function Modal({ children, onClose }) {
+  return (
+    <div className="cardPopupBackdrop" onClick={onClose || undefined}>
+      <div className="modalHolder" onClick={(e) => e.stopPropagation()}>
+        {onClose && <button className="modalClose" onClick={onClose} aria-label="Închide">✕</button>}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// Pop-up scurt pentru evenimente pe tablă (chirie, taxă, START, închisoare, fundație).
+// Se închide singur după câteva secunde sau la atingere.
+function EventPopup({ ev, onClose }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, ev.kind === 'rent' ? 2800 : 2200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ev.seq]);
+
+  let icon = '❓', title = '', sub = '', amount = null, amountColor = '#111';
+  let headColor = '#37474F', headText = '#fff';
+
+  if (ev.kind === 'rent') {
+    const info = cardInfo(ev.idx);
+    icon = info?.type === 'property' ? '🏠' : (info?.icon || '💸');
+    headColor = info?.color || '#C0392B';
+    headText = info?.type === 'property' ? '#111' : (info?.headText || '#fff');
+    title = info?.name || 'Chirie';
+    sub = `${ev.who} plătește chirie lui ${ev.owner}`;
+    amount = `−€${ev.amount}`; amountColor = '#D23B3B';
+  } else if (ev.kind === 'tax') {
+    icon = '💶'; title = ev.name; sub = `${ev.who} plătește taxa`;
+    amount = `−€${ev.amount}`; amountColor = '#D23B3B'; headColor = '#5A5A5A';
+  } else if (ev.kind === 'start') {
+    icon = '🎉'; title = 'START'; sub = `${ev.who} aterizează pe START`;
+    amount = `+€${ev.amount}`; amountColor = '#1E9E4E'; headColor = '#2E9E5B';
+  } else if (ev.kind === 'jail') {
+    icon = '🚓'; title = 'La închisoare!';
+    sub = ev.reason === 'doubles' ? `${ev.who} a dat 3 duble la rând` : `${ev.who} e trimis la închisoare`;
+    headColor = '#37474F';
+  } else if (ev.kind === 'fundatia') {
+    icon = '🏛️'; title = 'Fundația Anti-Monopoly';
+    sub = ev.amount > 0 ? `${ev.who} primește un ajutor` : ev.amount < 0 ? `${ev.who} contribuie la fundație` : `${ev.who} nu primește nimic`;
+    amount = ev.amount === 0 ? null : ev.amount > 0 ? `+€${ev.amount}` : `−€${Math.abs(ev.amount)}`;
+    amountColor = ev.amount >= 0 ? '#1E9E4E' : '#D23B3B'; headColor = '#7E6FBE';
+  }
+
+  return (
+    <div className="cardPopupBackdrop" onClick={onClose}>
+      <div className="evPop" onClick={(e) => e.stopPropagation()}>
+        <div className="evPopHead" style={{ background: headColor, color: headText }}>
+          <span className="evPopIcon">{icon}</span>
+          <span className="evPopTitle">{title}</span>
+        </div>
+        <div className="evPopBody">
+          <div className="evPopSub">{sub}</div>
+          {amount && <div className="evPopAmount" style={{ color: amountColor }}>{amount}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Table({ game, setGame, net, myId, onLeave }) {
   const online = !!net;
   const [rolling, setRolling] = useState(false);
@@ -315,6 +381,12 @@ function Table({ game, setGame, net, myId, onLeave }) {
     if (game.lastCard && game.lastCard.seq) setCardPopup(game.lastCard);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.lastCard?.seq]);
+  // Pop-up pentru evenimente (chirie / taxă / START / închisoare / fundație).
+  const [eventPopup, setEventPopup] = useState(null);
+  useEffect(() => {
+    if (game.lastEvent && game.lastEvent.seq) setEventPopup(game.lastEvent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.lastEvent?.seq]);
   const wrapRef = useRef(null);
   const me = currentPlayer(game);
   const isMyTurn = online ? game.turn === myId : true;
@@ -421,6 +493,7 @@ function Table({ game, setGame, net, myId, onLeave }) {
         )}
 
         {cardPopup && <CardPopup card={cardPopup} onClose={() => setCardPopup(null)} />}
+        {!cardPopup && eventPopup && <EventPopup ev={eventPopup} onClose={() => setEventPopup(null)} />}
 
         {debt && (
           <div className="debtBanner">
@@ -439,18 +512,7 @@ function Table({ game, setGame, net, myId, onLeave }) {
               Rândul lui {currentPlayer(game)?.name}… ⏳
             </div>
           </div>
-        ) : pendingSq && buyInfo ? (
-          <PropertyPopup info={buyInfo} canBuy={me.money >= pendingSq.price} onBuy={buy} onRefuse={decline} />
-        ) : taxPending ? (
-          <div className="actions">
-            <button className="btn" onClick={() => payTax('fixed')}>Fix · €{taxOpts.fixed}</button>
-            <button className="btn ghost" onClick={() => payTax('percent')}>{taxOpts.pct}% active · €{taxOpts.percent}</button>
-          </div>
-        ) : auction ? (
-          <AuctionPanel game={game} dispatch={dispatch} auction={auction} />
-        ) : trade ? (
-          <TradePanel game={game} dispatch={dispatch} trade={trade} />
-        ) : debt ? null : (
+        ) : !debt && !pendingSq && !taxPending && !auction && !trade ? (
           <>
             <div className="actions">
               {(!game.dice || rolledDouble) && (
@@ -462,34 +524,84 @@ function Table({ game, setGame, net, myId, onLeave }) {
             </div>
             <div className="actions" style={{ marginTop: 8 }}>
               {buildable.length > 0 && (
-                <button className="btn ghost" onClick={() => { setBuildOpen(o => !o); setManageOpen(false); }}>
+                <button className="btn ghost" onClick={() => { setBuildOpen(true); setManageOpen(false); }}>
                   🏠 Construiește ({buildable.length})
                 </button>
               )}
-              <button className="btn ghost" onClick={() => { setManageOpen(o => !o); setBuildOpen(false); }}>🏦 Gestionează</button>
+              <button className="btn ghost" onClick={() => { setManageOpen(true); setBuildOpen(false); }}>🏦 Gestionează</button>
             </div>
-            {buildOpen && buildable.length > 0 && (
-              <div className="panel" style={{ marginTop: 8, marginBottom: 0 }}>
-                <p className="sub" style={{ margin: '0 0 8px', textAlign: 'left' }}>
-                  {me.role === 'monopolist' ? 'Monopolist: construiești pe orașe complete.' : 'Competitor: construiești pe orice proprietate a ta.'}
-                </p>
-                <div className="plist">
-                  {buildable.map(idx => (
-                    <button key={idx} className="pchip" style={{ border: 'none', cursor: 'pointer' }} onClick={() => build(idx)}>
-                      <span className="dot" style={{ background: (GROUPS[BOARD[idx].group]?.color) }} />
-                      <b>{BOARD[idx].name}</b>
-                      <span style={{ marginLeft: 'auto', fontWeight: 800 }}>
-                        {'🏠'.repeat(game.buildings?.[idx] || 0)} +🏠 €{houseCost(idx, me.role)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </>
+        ) : null}
+
+        {/* ---- Card „act de proprietate" (Cumpără) — doar jucătorul curent decide ---- */}
+        {pendingSq && buyInfo && (!online || isMyTurn) && (
+          <PropertyPopup info={buyInfo} canBuy={me.money >= pendingSq.price} onBuy={buy} onRefuse={decline} />
         )}
 
-        {manageOpen && <ManagePanel game={game} dispatch={dispatch} me={me} myProps={myProps} />}
+        {/* ---- Impozit pe venit (alegere) — doar jucătorul curent ---- */}
+        {taxPending && taxOpts && (!online || isMyTurn) && (
+          <Modal>
+            <div className="panel" style={{ marginBottom: 0, textAlign: 'center' }}>
+              <div style={{ fontSize: 40 }}>💶</div>
+              <div style={{ fontWeight: 900, fontSize: 18, margin: '4px 0 2px' }}>Impozit pe venit</div>
+              <p className="sub" style={{ margin: '0 0 14px' }}>{me?.name}, alege cum plătești:</p>
+              <div className="actions">
+                <button className="btn" onClick={() => payTax('fixed')}>Fix · €{taxOpts.fixed}</button>
+                <button className="btn ghost" onClick={() => payTax('percent')}>{taxOpts.pct}% active · €{taxOpts.percent}</button>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        {/* ---- Licitație ---- */}
+        {auction && (
+          <Modal>
+            <AuctionPanel game={game} dispatch={dispatch} auction={auction} />
+          </Modal>
+        )}
+
+        {/* ---- Schimb ---- */}
+        {trade && (
+          <Modal>
+            <TradePanel game={game} dispatch={dispatch} trade={trade} />
+          </Modal>
+        )}
+
+        {/* ---- Construiește ---- */}
+        {buildOpen && (
+          <Modal onClose={() => setBuildOpen(false)}>
+            <div className="panel" style={{ marginBottom: 0 }}>
+              <div style={{ fontWeight: 900, marginBottom: 8 }}>🏠 Construiește</div>
+              {buildable.length === 0 ? (
+                <p className="sub" style={{ margin: 0, textAlign: 'left' }}>Nu poți construi acum.</p>
+              ) : (
+                <>
+                  <p className="sub" style={{ margin: '0 0 8px', textAlign: 'left' }}>
+                    {me.role === 'monopolist' ? 'Monopolist: construiești pe orașe complete.' : 'Competitor: construiești pe orice proprietate a ta.'}
+                  </p>
+                  <div className="plist">
+                    {buildable.map(idx => (
+                      <button key={idx} className="pchip" style={{ border: 'none', cursor: 'pointer' }} onClick={() => build(idx)}>
+                        <span className="dot" style={{ background: (GROUPS[BOARD[idx].group]?.color) }} />
+                        <b>{BOARD[idx].name}</b>
+                        <span style={{ marginLeft: 'auto', fontWeight: 800 }}>
+                          {'🏠'.repeat(game.buildings?.[idx] || 0)} +🏠 €{houseCost(idx, me.role)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </Modal>
+        )}
+
+        {/* ---- Gestionează (ipotecă / vânzare case / schimb) ---- */}
+        {manageOpen && (
+          <Modal onClose={() => setManageOpen(false)}>
+            <ManagePanel game={game} dispatch={dispatch} me={me} myProps={myProps} />
+          </Modal>
+        )}
 
         <div className="moneyList">
           {game.players.map(p => (
