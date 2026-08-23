@@ -124,7 +124,7 @@ const STEP_SPEED = 7;    // căsuțe pe secundă
 function Pawn({ player, offset, active, posRef, movingRef }) {
   const ref = useRef();
   // pos = poziție absolută „nedesfășurată" (float); end = ținta absolută
-  const anim = useRef({ pos: player.pos, end: player.pos, endTile: player.pos });
+  const anim = useRef({ pos: player.pos, end: player.pos, endTile: player.pos, jx: 0, jz: 0 });
 
   // detectăm schimbarea de căsuță și construim traseul înainte
   if (player.pos !== anim.current.endTile) {
@@ -145,8 +145,19 @@ function Pawn({ player, offset, active, posRef, movingRef }) {
     const pa = pos3(((tileA % 40) + 40) % 40);
     const pb = pos3((((tileA + 1) % 40) + 40) % 40);
     const moving = a.pos < a.end;
-    const x = pa.x + (pb.x - pa.x) * frac + offset[0];
-    const z = pa.z + (pb.z - pa.z) * frac + offset[1];
+    // Pe colțul Închisoare (10), când e oprit: pionul stă pe jumătatea CORECTĂ —
+    // spre colțul exterior dacă e închis, spre interior (centru) dacă e în vacanță.
+    const settled = ((Math.round(a.pos) % 40) + 40) % 40;
+    let tjx = 0, tjz = 0;
+    if (!moving && settled === 10) {
+      const p10 = pos3(10), sx = Math.sign(p10.x) || 1, sz = Math.sign(p10.z) || 1;
+      const dir = player.inJail ? 1 : -1; // +1 = exterior (închisoare), -1 = interior (vacanță)
+      tjx = dir * sx * 0.42; tjz = dir * sz * 0.42;
+    }
+    const k = Math.min(1, delta * 8); // tranziție lină spre jumătatea corectă
+    a.jx += (tjx - a.jx) * k; a.jz += (tjz - a.jz) * k;
+    const x = pa.x + (pb.x - pa.x) * frac + offset[0] + a.jx;
+    const z = pa.z + (pb.z - pa.z) * frac + offset[1] + a.jz;
     const y = H / 2 + (moving ? Math.sin(frac * Math.PI) * HOP : 0);
     if (ref.current) ref.current.position.set(x, y, z);
     if (active && posRef) posRef.current.set(x, y, z);
