@@ -58,11 +58,12 @@ function Tile({ i, game }) {
         </mesh>
       )}
 
-      {/* highlight căsuța curentă */}
+      {/* highlight căsuța curentă — inel DEASUPRA blatului (nu sub el) */}
       {here && (
-        <mesh position={[0, H / 2 + 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[w * 0.52, w * 0.6, 32]} />
-          <meshStandardMaterial color="#E0A82E" emissive="#E0A82E" emissiveIntensity={0.6} />
+        <mesh position={[0, H / 2 + 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[w * 0.36, w * 0.5, 40]} />
+          <meshStandardMaterial color="#E0A82E" emissive="#E0A82E" emissiveIntensity={0.8}
+            transparent opacity={0.95} depthWrite={false} />
         </mesh>
       )}
 
@@ -98,22 +99,38 @@ function Tile({ i, game }) {
         </group>
       )}
 
-      {/* marcaj proprietar — RAMĂ colorată pe muchiile căsuței (vizibil dintr-o privire) */}
-      {owner && (
-        <group position={[0, H / 2 + 0.012, 0]}>
-          {[
-            { p: [0, 0, w / 2 - 0.03], g: [w, 0.07, 0.06] },
-            { p: [0, 0, -(w / 2 - 0.03)], g: [w, 0.07, 0.06] },
-            { p: [w / 2 - 0.03, 0, 0], g: [0.06, 0.07, w] },
-            { p: [-(w / 2 - 0.03), 0, 0], g: [0.06, 0.07, w] },
-          ].map((b, k) => (
-            <mesh key={k} position={b.p}>
-              <boxGeometry args={b.g} />
-              <meshStandardMaterial color={owner.color} emissive={owner.color} emissiveIntensity={0.35} roughness={0.5} />
-            </mesh>
-          ))}
-        </group>
-      )}
+      {/* marcaj proprietar — STEAG în culoarea pionului, în fața căsuței (spre exterior) */}
+      {owner && <Flag color={owner.color} out={OUT} w={w} />}
+    </group>
+  );
+}
+
+// Steguleț în culoarea proprietarului, plantat la muchia EXTERIOARĂ a căsuței;
+// pânza flutură ușor (viață pe tablă).
+function Flag({ color, out, w }) {
+  const wob = useRef();
+  useFrame(({ clock }) => {
+    if (wob.current) wob.current.rotation.y = Math.sin(clock.elapsedTime * 3.2 + out[0] * 2 + out[1] * 3) * 0.38;
+  });
+  const rotY = Math.atan2(out[0], out[1]);
+  const px = out[0] * (w / 2 - 0.04), pz = out[1] * (w / 2 - 0.04);
+  const poleH = 0.46;
+  return (
+    <group position={[px, H / 2, pz]} rotation={[0, rotY, 0]}>
+      <mesh position={[0, poleH / 2, 0]} castShadow>
+        <cylinderGeometry args={[0.018, 0.018, poleH, 8]} />
+        <meshStandardMaterial color="#5b4632" roughness={0.85} />
+      </mesh>
+      <mesh position={[0, poleH, 0]}>
+        <sphereGeometry args={[0.035, 10, 10]} />
+        <meshStandardMaterial color="#D9B44A" metalness={0.5} roughness={0.3} />
+      </mesh>
+      <group ref={wob} position={[0, poleH - 0.11, 0]}>
+        <mesh position={[0.18, 0, 0]} castShadow>
+          <planeGeometry args={[0.36, 0.22]} />
+          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.28} roughness={0.5} side={THREE.DoubleSide} />
+        </mesh>
+      </group>
     </group>
   );
 }
