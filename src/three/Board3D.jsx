@@ -588,7 +588,13 @@ export default function Board3D({ game, dice, rollNonce }) {
 
   return (
     <div className="canvas3d">
-      <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }}>
+      <Canvas shadows dpr={[1, 1.5]} gl={{ antialias: true, powerPreference: 'high-performance' }}
+        onCreated={({ gl }) => {
+          // Pe mobil GPU-ul poate „pierde" contextul WebGL (memorie/economisire) → altfel
+          // canvas-ul rămâne alb definitiv. preventDefault îi cere browserului să-l restaureze,
+          // iar r3f re-randează automat la 'webglcontextrestored'.
+          gl.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault(), false);
+        }}>
         <color attach="background" args={['#9CC9EC']} />
         <fog attach="fog" args={['#CFE3EA', 90, 260]} />
         <PerspectiveCamera makeDefault position={[0, 20, 26]} fov={42} />

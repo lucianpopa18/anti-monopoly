@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense, Component } from 'react';
 import { sfx } from './sfx.js';
 import Board3D from './three/Board3D.jsx';
 import { BOARD, GROUPS } from './game/board.js';
@@ -15,6 +15,21 @@ import {
 import { Room, newId } from './net/room.js';
 
 const PAWN_STEP_SPEED = 7; // căsuțe/secundă — trebuie să fie egal cu STEP_SPEED din Board3D.jsx
+
+// Prinde orice eroare de randare (inclusiv din canvas-ul 3D) și afișează un ecran
+// de recuperare în loc de „pagină albă". `fallback(reset, error)` decide ce se arată.
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) {
+    try { console.error('[AntiMonopoly] crash:', error, info?.componentStack); } catch { /* */ }
+  }
+  reset = () => this.setState({ error: null });
+  render() {
+    if (this.state.error) return this.props.fallback(this.reset, this.state.error);
+    return this.props.children;
+  }
+}
 
 // Acțiuni apelate prin nume — folosit de dispatch (local aplică direct, online trimite gazdei).
 const ENGINE = {
@@ -135,7 +150,22 @@ function StandingsModal({ game, myId, conn, onClose }) {
   );
 }
 
+// Ecran de recuperare la nivel de aplicație (dacă se prăbușește tot).
 export default function App() {
+  return (
+    <ErrorBoundary fallback={() => (
+      <div className="wrap" style={{ textAlign: 'center' }}>
+        <div className="title" style={{ marginTop: 60 }}>Hopa! 😅</div>
+        <div className="sub">Jocul a întâmpinat o problemă neașteptată. Reîncarcă pagina ca să continui.</div>
+        <button className="btn" style={{ width: '100%', marginTop: 18 }} onClick={() => window.location.reload()}>🔄 Reîncarcă jocul</button>
+      </div>
+    )}>
+      <AppInner />
+    </ErrorBoundary>
+  );
+}
+
+function AppInner() {
   const [game, setGame] = useState(null);
   const [net, setNet] = useState(null);   // Room online; null = local (un telefon)
   const [myId, setMyId] = useState(null); // id-ul jucătorului de pe ACEST telefon (online)
@@ -723,9 +753,16 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
       </div>
       <CoinShower trigger={coinKey} />
       {celebrate > 0 && <Confetti count={90} />}
-      <Suspense fallback={<div className="canvas3d" style={{ display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Se încarcă tabla 3D…</div>}>
-        <Board3D game={game} dice={shownDice ?? game.dice} rollNonce={rollNonce} immersive={immersive} />
-      </Suspense>
+      <ErrorBoundary fallback={(reset) => (
+        <div className="canvas3d" style={{ display: 'grid', placeItems: 'center', gap: 10, color: 'var(--muted)', textAlign: 'center', padding: 16 }}>
+          <div>Tabla 3D a avut o problemă.<br />Jocul e în continuare activ.</div>
+          <button className="btn" style={{ maxWidth: 220 }} onClick={reset}>🔄 Reîncarcă tabla</button>
+        </div>
+      )}>
+        <Suspense fallback={<div className="canvas3d" style={{ display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Se încarcă tabla 3D…</div>}>
+          <Board3D game={game} dice={shownDice ?? game.dice} rollNonce={rollNonce} immersive={immersive} />
+        </Suspense>
+      </ErrorBoundary>
       {standingsOpen && <StandingsModal game={game} myId={myId} conn={conn} onClose={() => setStandingsOpen(false)} />}
 
       <div className="hud">
