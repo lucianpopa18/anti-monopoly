@@ -272,17 +272,10 @@ function Die({ value, rollNonce, turnId, home }) {
   );
 }
 
-function Dice3D({ dice, rollNonce, turnId, activeTile }) {
-  // Îngheață ancora (în fața jucătorului) la aruncare/schimbare de tură, ca zarurile
-  // să nu „sară" în altă parte când pionul pleacă de pe căsuță.
-  const seen = useRef({ nonce: rollNonce, turn: turnId, tile: activeTile });
-  if (rollNonce !== seen.current.nonce || turnId !== seen.current.turn) {
-    seen.current.nonce = rollNonce; seen.current.turn = turnId; seen.current.tile = activeTile;
-  }
-  const a = useMemo(() => diceAnchor(seen.current.tile, new THREE.Vector3()), [seen.current.tile]);
+function Dice3D({ dice, rollNonce, turnId }) {
   if (!dice) return null;
   return (
-    <group position={a}>
+    <group>
       <Die value={dice[0]} rollNonce={rollNonce} turnId={turnId} home={[-0.9, 0.55, 0]} />
       <Die value={dice[1]} rollNonce={rollNonce} turnId={turnId} home={[0.9, 0.55, 0]} />
     </group>
@@ -489,20 +482,15 @@ function idealView(tile, immersive) {
   return idealViewXZ(x, z, immersive);
 }
 
-// Punctul unde cad zarurile: pe suprafața deschisă, ÎN FAȚA jucătorului curent
-// (poziția căsuței lui trasă spre centru), nu în mijlocul tablei.
-function diceAnchor(idx, out) {
-  const { x, z } = pos3(idx);
-  return (out || new THREE.Vector3()).set(x * 0.6, 0, z * 0.6);
-}
-// Vedere de aruncare: cameră JOASĂ și APROAPE (unghi „hero"), pe latura zarurilor;
-// `angleOff` variază la fiecare aruncare ca să nu arate niciodată la fel.
-function diceView(x, z, angleOff, immersive, out) {
-  const ang = Math.atan2(z, x) + angleOff;
-  const DIST = immersive ? 9.5 : 12.5, HEIGHT = immersive ? 4.6 : 6;
+// Vedere de aruncare: zarurile cad în CENTRU (unde nu ating pachetele/căsuțele),
+// dar camera vine JOS și APROAPE (unghi „hero") DINSPRE latura jucătorului curent
+// + un mic jitter la fiecare aruncare → nu mai arată niciodată la fel.
+function diceView(tileX, tileZ, angleOff, immersive, out) {
+  const ang = Math.atan2(tileZ, tileX) + angleOff;
+  const DIST = immersive ? 10 : 13, HEIGHT = immersive ? 4.8 : 6.2;
   const o = out || { pos: new THREE.Vector3(), tgt: new THREE.Vector3() };
   o.pos.set(Math.cos(ang) * DIST, HEIGHT, Math.sin(ang) * DIST);
-  o.tgt.set(x, 0.5, z);
+  o.tgt.set(0, 0.5, 0);
   return o;
 }
 // vectori temporari (evită alocări în bucla de randare)
@@ -528,8 +516,8 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
     st.current.phase = 'dice'; st.current.t0 = performance.now(); st.current.stoppedAt = 0;
     st.current.fromPos.copy(camera.position);
     if (controls.current) { st.current.fromTgt.copy(controls.current.target); controls.current.enabled = false; }
-    // îngheață ancora zarurilor (jucătorul care aruncă) + unghi de cameră DIFERIT la fiecare aruncare
-    diceAnchor(P.current.activeTile, st.current.anchor);
+    // îngheață poziția căsuței jucătorului (pt direcția camerei) + jitter de unghi la fiecare aruncare
+    { const pp = pos3(P.current.activeTile); st.current.anchor.set(pp.x, 0, pp.z); }
     st.current.diceAngle = (Math.random() - 0.5) * 1.1;
   }
   // trigger: schimbare tură → glisare lină spre noul jucător (dacă nu suntem în aruncare)
@@ -650,8 +638,7 @@ export default function Board3D({ game, dice, rollNonce }) {
           maxPolarAngle={1.4} minPolarAngle={0.15} enableDamping dampingFactor={0.08} />
         <CinematicDirector rollNonce={rollNonce} controls={controls} pawnPos={pawnPos} pawnMoving={pawnMoving}
           activeTile={game.players.find(p => p.id === game.turn)?.pos ?? 0} turnId={game.turn} />
-        <Dice3D dice={dice} rollNonce={rollNonce} turnId={game.turn}
-          activeTile={game.players.find(p => p.id === game.turn)?.pos ?? 0} />
+        <Dice3D dice={dice} rollNonce={rollNonce} turnId={game.turn} />
         <ambientLight intensity={0.7} />
         <directionalLight position={[10, 22, 12]} intensity={1.4} castShadow
           shadow-mapSize-width={1024} shadow-mapSize-height={1024}
