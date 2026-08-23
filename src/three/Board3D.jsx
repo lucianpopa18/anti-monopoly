@@ -194,21 +194,22 @@ function Die({ value, rollNonce, turnId, home }) {
   const ref = useRef();
   const mats = useMemo(() => FACE_VALUES.map(v => new THREE.MeshStandardMaterial({ map: makePipTexture(v), roughness: 0.4 })), []);
   const st = useRef({
-    nonce: rollNonce, turn: turnId, phase: 'idle', start: 0,
+    nonce: rollNonce, turn: turnId, phase: 'idle', start: 0, popStart: 0,
     from: new THREE.Vector3(...home), land: new THREE.Vector3(...home),
     retFrom: new THREE.Vector3(...home), axis: new THREE.Vector3(1, 0, 0), spins: 6,
   });
 
-  // aruncare → aterizează într-o poziție ALEATORIE pe tablă
+  // aruncare → aterizează într-o poziție ALEATORIE pe tablă (pereche ordonată lângă jucător)
   if (rollNonce !== st.current.nonce) {
     st.current.nonce = rollNonce; st.current.phase = 'rolling'; st.current.start = performance.now();
+    st.current.popStart = 0;
     st.current.axis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
     st.current.spins = 6 + Math.random() * 4; // fracționar → orientare de start aleatorie (nu pornește pe valoare)
     // aterizare pe ZONE separate (stânga/dreapta) ca cele două zaruri să nu se suprapună
-    const zoneX = home[0] < 0 ? -2.4 : 2.4;
-    const lx = zoneX + (Math.random() - 0.5) * 2, lz = (Math.random() - 0.5) * 3.6;
+    const zoneX = home[0] < 0 ? -0.85 : 0.85;
+    const lx = zoneX + (Math.random() - 0.5) * 0.5, lz = (Math.random() - 0.5) * 1.0;
     st.current.land.set(lx, home[1], lz);
-    st.current.from.set(lx + (Math.random() - 0.5) * 1.5, home[1] + 6, lz + 4);
+    st.current.from.set(lx + (Math.random() - 0.5) * 0.8, home[1] + 6, lz + 3);
   }
   // schimbare tură → zarurile revin la mijloc (acasă)
   if (turnId !== st.current.turn) {
@@ -223,7 +224,7 @@ function Die({ value, rollNonce, turnId, home }) {
     const m = ref.current; if (!m) return;
     const tgt = targetQuat(value || 1); const s = st.current;
 
-    if (s.phase === 'idle') { m.position.set(home[0], home[1], home[2]); m.quaternion.copy(tgt); return; }
+    if (s.phase === 'idle') { m.position.set(home[0], home[1], home[2]); m.quaternion.copy(tgt); m.scale.setScalar(1); return; }
 
     if (s.phase === 'rolling') {
       // mai lent și mai fin: ~1.5s, rostogolire lină + 2-3 sărituri care se sting
@@ -236,10 +237,20 @@ function Die({ value, rollNonce, turnId, home }) {
       const bounce = Math.abs(Math.sin(T * Math.PI * 2.4)) * Math.pow(1 - T, 1.4) * 1.9; // sărituri mai blânde
       const drop = s.from.y + (s.land.y - s.from.y) * (1 - Math.pow(1 - T, 3)); // cădere accelerată (gravitație)
       m.position.set(ox, Math.max(s.land.y, drop) + bounce, oz);
-      if (T >= 1) { s.phase = 'rest'; m.position.copy(s.land); }
+      // SQUASH & STRETCH: turtit la contact (bounce mic), ușor alungit în aer
+      const squash = Math.max(0, 0.3 - bounce * 0.45);
+      m.scale.set(1 + squash * 0.7, 1 - squash, 1 + squash * 0.7);
+      if (T >= 1) { s.phase = 'rest'; s.popStart = performance.now(); m.position.copy(s.land); }
       return;
     }
-    if (s.phase === 'rest') { m.position.copy(s.land); m.quaternion.copy(tgt); return; }
+    if (s.phase === 'rest') {
+      m.position.copy(s.land); m.quaternion.copy(tgt);
+      // POP la aterizare: crește scurt ~18% apoi revine (accent pe rezultat)
+      const pt = Math.min(1, (performance.now() - s.popStart) / 260);
+      const pop = Math.sin(pt * Math.PI) * 0.18;
+      m.scale.setScalar(1 + pop);
+      return;
+    }
 
     if (s.phase === 'returning') {
       const T = Math.min(1, (performance.now() - s.start) / 650), ease = 1 - Math.pow(1 - T, 3);
@@ -248,7 +259,7 @@ function Die({ value, rollNonce, turnId, home }) {
         s.retFrom.y + (home[1] - s.retFrom.y) * ease + Math.sin(T * Math.PI) * 0.6,
         s.retFrom.z + (home[2] - s.retFrom.z) * ease,
       );
-      m.quaternion.copy(tgt);
+      m.quaternion.copy(tgt); m.scale.setScalar(1);
       if (T >= 1) { s.phase = 'idle'; m.position.set(home[0], home[1], home[2]); }
       return;
     }
@@ -261,10 +272,17 @@ function Die({ value, rollNonce, turnId, home }) {
   );
 }
 
-function Dice3D({ dice, rollNonce, turnId }) {
+function Dice3D({ dice, rollNonce, turnId, activeTile }) {
+  // Îngheață ancora (în fața jucătorului) la aruncare/schimbare de tură, ca zarurile
+  // să nu „sară" în altă parte când pionul pleacă de pe căsuță.
+  const seen = useRef({ nonce: rollNonce, turn: turnId, tile: activeTile });
+  if (rollNonce !== seen.current.nonce || turnId !== seen.current.turn) {
+    seen.current.nonce = rollNonce; seen.current.turn = turnId; seen.current.tile = activeTile;
+  }
+  const a = useMemo(() => diceAnchor(seen.current.tile, new THREE.Vector3()), [seen.current.tile]);
   if (!dice) return null;
   return (
-    <group>
+    <group position={a}>
       <Die value={dice[0]} rollNonce={rollNonce} turnId={turnId} home={[-0.9, 0.55, 0]} />
       <Die value={dice[1]} rollNonce={rollNonce} turnId={turnId} home={[0.9, 0.55, 0]} />
     </group>
@@ -471,6 +489,25 @@ function idealView(tile, immersive) {
   return idealViewXZ(x, z, immersive);
 }
 
+// Punctul unde cad zarurile: pe suprafața deschisă, ÎN FAȚA jucătorului curent
+// (poziția căsuței lui trasă spre centru), nu în mijlocul tablei.
+function diceAnchor(idx, out) {
+  const { x, z } = pos3(idx);
+  return (out || new THREE.Vector3()).set(x * 0.6, 0, z * 0.6);
+}
+// Vedere de aruncare: cameră JOASĂ și APROAPE (unghi „hero"), pe latura zarurilor;
+// `angleOff` variază la fiecare aruncare ca să nu arate niciodată la fel.
+function diceView(x, z, angleOff, immersive, out) {
+  const ang = Math.atan2(z, x) + angleOff;
+  const DIST = immersive ? 9.5 : 12.5, HEIGHT = immersive ? 4.6 : 6;
+  const o = out || { pos: new THREE.Vector3(), tgt: new THREE.Vector3() };
+  o.pos.set(Math.cos(ang) * DIST, HEIGHT, Math.sin(ang) * DIST);
+  o.tgt.set(x, 0.5, z);
+  return o;
+}
+// vectori temporari (evită alocări în bucla de randare)
+const _tv1 = new THREE.Vector3(), _tv2 = new THREE.Vector3(), _tv3 = new THREE.Vector3();
+
 // Regizor: init pe jucătorul curent · aruncare (picaj zaruri → urmărire pion) →
 // se așază pe latura pionului · la schimbarea turei, glisează spre noul jucător.
 function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTile, turnId, immersive }) {
@@ -481,6 +518,7 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
     nonce: rollNonce, turn: turnId, phase: 'init', t0: 0, glideT0: 0, followT0: 0, stoppedAt: 0,
     fromPos: new THREE.Vector3(), fromTgt: new THREE.Vector3(), toPos: new THREE.Vector3(), toTgt: new THREE.Vector3(),
     view: { pos: new THREE.Vector3(), tgt: new THREE.Vector3() },
+    anchor: new THREE.Vector3(), diceAngle: 0,
     orbitTgt: new THREE.Vector3(), radius: 18, camY: 12, baseAngle: 0, idleT0: 0, orbitImmersive: false,
   });
 
@@ -490,6 +528,9 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
     st.current.phase = 'dice'; st.current.t0 = performance.now(); st.current.stoppedAt = 0;
     st.current.fromPos.copy(camera.position);
     if (controls.current) { st.current.fromTgt.copy(controls.current.target); controls.current.enabled = false; }
+    // îngheață ancora zarurilor (jucătorul care aruncă) + unghi de cameră DIFERIT la fiecare aruncare
+    diceAnchor(P.current.activeTile, st.current.anchor);
+    st.current.diceAngle = (Math.random() - 0.5) * 1.1;
   }
   // trigger: schimbare tură → glisare lină spre noul jucător (dacă nu suntem în aruncare)
   if (turnId !== st.current.turn) {
@@ -533,11 +574,18 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
     }
 
     if (s.phase === 'dice') {
-      // picaj lin spre zaruri, apoi ține pe ele până rezultatul e clar
-      const el = now - s.t0, IN = 420, MAX_HOLD = 2600;
-      const closePos = new THREE.Vector3(2, 5.5, 12), closeTgt = new THREE.Vector3(0, 0.5, 0);
-      if (el < IN) { const t = easeCubic(el / IN); camera.position.copy(s.fromPos).lerp(closePos, t); tgt.copy(s.fromTgt).lerp(closeTgt, t); }
-      else { camera.position.copy(closePos); tgt.copy(closeTgt); }
+      // picaj „hero" spre zaruri (lângă jucător, unghi diferit de fiecare dată),
+      // apoi IMPACT (mic zoom-punch + zguduire) când zarurile ating masa.
+      const el = now - s.t0, IN = 480, LAND = 1500, MAX_HOLD = 2600;
+      diceView(s.anchor.x, s.anchor.z, s.diceAngle, P.current.immersive, s.view);
+      // impact: se stinge în ~320ms după aterizare
+      let k = 0;
+      if (el > LAND) k = Math.max(0, 1 - (el - LAND) / 320);
+      // apropie camera de țintă la impact (zoom-punch)
+      const camPos = _tv1.copy(s.view.pos).sub(s.view.tgt).multiplyScalar(1 - 0.13 * k * k).add(s.view.tgt);
+      if (k > 0) camPos.add(_tv2.set(Math.random() - 0.5, (Math.random() - 0.5) * 0.6, Math.random() - 0.5).multiplyScalar(0.18 * k));
+      if (el < IN) { const t = easeCubic(el / IN); camera.position.copy(s.fromPos).lerp(camPos, t); tgt.copy(s.fromTgt).lerp(s.view.tgt, t); }
+      else { camera.position.copy(camPos); tgt.copy(s.view.tgt); }
       camera.lookAt(tgt);
       // trece la urmărire FIX când pornește pionul (sincron local+online) sau ca rezervă după MAX_HOLD
       if (el >= IN && (pawnMoving.current || el > MAX_HOLD)) { s.phase = 'follow'; s.followT0 = now; s.stoppedAt = 0; }
@@ -602,7 +650,8 @@ export default function Board3D({ game, dice, rollNonce }) {
           maxPolarAngle={1.4} minPolarAngle={0.15} enableDamping dampingFactor={0.08} />
         <CinematicDirector rollNonce={rollNonce} controls={controls} pawnPos={pawnPos} pawnMoving={pawnMoving}
           activeTile={game.players.find(p => p.id === game.turn)?.pos ?? 0} turnId={game.turn} />
-        <Dice3D dice={dice} rollNonce={rollNonce} turnId={game.turn} />
+        <Dice3D dice={dice} rollNonce={rollNonce} turnId={game.turn}
+          activeTile={game.players.find(p => p.id === game.turn)?.pos ?? 0} />
         <ambientLight intensity={0.7} />
         <directionalLight position={[10, 22, 12]} intensity={1.4} castShadow
           shadow-mapSize-width={1024} shadow-mapSize-height={1024}
