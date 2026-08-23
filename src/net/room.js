@@ -64,6 +64,24 @@ export class Room {
   _broadcast() { if (this.state) this._send('state', { state: this.state }); }
   _apply(next) { this.state = next; this.onState(next); if (this.isHost) this._broadcast(); }
 
+  // Verifică dacă jucătorul `byId` are DREPTUL să ceară acțiunea `fn` acum.
+  // (Panourile sunt comune, dar pe online fiecare telefon poate acționa doar pentru el.)
+  _authorized(fn, args, byId) {
+    const s = this.state;
+    // acțiuni care aparțin jucătorului al cărui rând este
+    const CURRENT_ONLY = new Set([
+      'applyBuy', 'applyDeclineBuy', 'applyEndTurn', 'applyBuild', 'applyPayIncomeTax',
+      'applyMortgage', 'applyUnmortgage', 'applySellHouse', 'proposeTrade', 'applyDeclareBankrupt',
+    ]);
+    if (CURRENT_ONLY.has(fn)) return byId === s.turn;
+    // la licitație poți licita/pasa DOAR pentru tine (nu pentru alt jucător)
+    if (fn === 'applyBid' || fn === 'applyPassAuction') return args[0] === byId;
+    // schimbul e decis DOAR de cel care primește oferta
+    if (fn === 'applyAcceptTrade' || fn === 'applyDeclineTrade') return s.pending?.type === 'trade' && byId === s.pending.toId;
+    if (fn === 'startGame') return byId === s.hostId; // doar gazda pornește
+    return true; // setRole etc. (lobby)
+  }
+
   // GAZDA procesează o cerere de acțiune (de la ea sau de la un alt jucător).
   _handle({ fn, args = [], byId }) {
     if (!this.isHost || !this.state) return;
@@ -71,17 +89,21 @@ export class Room {
       if (fn === '__hello') { this._broadcast(); return; }
       if (fn === '__join') { this._apply(addPlayer(this.state, args[0], args[1], byId)); return; }
       if (fn === '__roll') {
+        if (byId !== this.state.turn) return;   // doar jucătorul de pe rând aruncă
+        if (this._rollTimer) return;            // aruncare deja în curs (anti dublu-click)
         const d = rollDicePair();
         // Faza 1: anunță zarul tuturor (animație) + animă local la gazdă.
         this._send('rolling', { dice: d });
         if (this.onRolling) this.onRolling(d);
         // Faza 2: după ce cad zarurile, aplică mutarea și trimite starea.
-        clearTimeout(this._rollTimer);
-        this._rollTimer = setTimeout(() => this._apply(applyRoll(this.state, d)), ROLL_REVEAL_MS);
+        this._rollTimer = setTimeout(() => {
+          this._rollTimer = null;
+          this._apply(applyRoll(this.state, d));
+        }, ROLL_REVEAL_MS);
         return;
       }
       const f = ACTIONS[fn];
-      if (f) this._apply(f(this.state, ...args));
+      if (f && this._authorized(fn, args, byId)) this._apply(f(this.state, ...args));
     } catch (e) { /* acțiune invalidă → ignorăm */ }
   }
 

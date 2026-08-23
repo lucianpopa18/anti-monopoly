@@ -564,14 +564,14 @@ function Table({ game, setGame, net, myId, onLeave }) {
         {/* ---- Licitație ---- */}
         {auction && (
           <Modal>
-            <AuctionPanel game={game} dispatch={dispatch} auction={auction} />
+            <AuctionPanel game={game} dispatch={dispatch} auction={auction} online={online} myId={myId} />
           </Modal>
         )}
 
         {/* ---- Schimb ---- */}
         {trade && (
           <Modal>
-            <TradePanel game={game} dispatch={dispatch} trade={trade} />
+            <TradePanel game={game} dispatch={dispatch} trade={trade} online={online} myId={myId} />
           </Modal>
         )}
 
@@ -628,24 +628,27 @@ function Table({ game, setGame, net, myId, onLeave }) {
 }
 
 /* ---- Licitație ---- */
-function AuctionPanel({ game, dispatch, auction }) {
+function AuctionPanel({ game, dispatch, auction, online, myId }) {
   const sq = BOARD[auction.idx];
   const eligible = game.players.filter(p => !p.bankrupt && !auction.passed.includes(p.id));
   const bid = (pid, amount) => dispatch('applyBid', pid, amount);
   const pass = (pid) => dispatch('applyPassAuction', pid);
   const high = auction.highBid;
+  const highName = auction.highBidderId && game.players.find(p => p.id === auction.highBidderId)?.name;
+  // ONLINE: fiecare telefon vede DOAR controalele lui (nu poate licita pentru alții).
+  const controls = online ? eligible.filter(p => p.id === myId) : eligible;
+  const active = game.players.filter(p => !p.bankrupt);
   return (
     <div className="panel" style={{ marginBottom: 0 }}>
       <div style={{ fontWeight: 900, marginBottom: 4 }}>🔨 Licitație: {sq.name}</div>
       <p className="sub" style={{ textAlign: 'left', margin: '0 0 10px' }}>
-        Ofertă maximă: <b style={{ color: 'var(--ink)' }}>€{high}</b>
-        {auction.highBidderId && ` · ${game.players.find(p => p.id === auction.highBidderId)?.name}`}
+        Ofertă maximă: <b style={{ color: 'var(--ink)' }}>€{high}</b>{highName && ` · ${highName}`}
       </p>
       <div className="plist">
-        {eligible.map(p => (
+        {controls.map(p => (
           <div className="pchip" key={p.id}>
             <span className="dot" style={{ background: p.color }} />
-            <b>{p.name}</b> <span style={{ color: 'var(--muted)', fontSize: 12 }}>€{p.money}</span>
+            <b>{p.name}{online && p.id === myId ? ' (tu)' : ''}</b> <span style={{ color: 'var(--muted)', fontSize: 12 }}>€{p.money}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
               <button className="btn" style={{ minHeight: 36, padding: '0 10px', fontSize: 13 }}
                 disabled={p.money < high + 10} onClick={() => bid(p.id, high + 10)}>+€10</button>
@@ -656,15 +659,31 @@ function AuctionPanel({ game, dispatch, auction }) {
           </div>
         ))}
       </div>
+      {online && controls.length === 0 && (
+        <p className="sub" style={{ textAlign: 'center', margin: '2px 0 0', fontWeight: 800 }}>
+          {auction.passed.includes(myId) ? 'Ai pasat. Aștepți finalul licitației…' : 'Aștepți licitația…'}
+        </p>
+      )}
+      {online && (
+        <div className="moneyList" style={{ marginTop: 10 }}>
+          {active.map(p => (
+            <span key={p.id} className={`moneyChip ${auction.highBidderId === p.id ? 'turn' : ''}`}>
+              <span className="dot" style={{ background: p.color }} />
+              {p.name}: {auction.passed.includes(p.id) ? 'a pasat' : auction.highBidderId === p.id ? `€${high} ✋` : 'licitează'}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 /* ---- Schimb: oferta primită ---- */
-function TradePanel({ game, dispatch, trade }) {
+function TradePanel({ game, dispatch, trade, online, myId }) {
   const from = game.players.find(p => p.id === trade.fromId);
   const to = game.players.find(p => p.id === trade.toId);
   const names = (idxs) => idxs.map(i => BOARD[i].name).join(', ') || '—';
+  const canDecide = !online || myId === trade.toId; // online: doar cel care primește oferta decide
   return (
     <div className="panel" style={{ marginBottom: 0 }}>
       <div style={{ fontWeight: 900, marginBottom: 6 }}>🤝 {from.name} propune un schimb lui {to.name}</div>
@@ -672,11 +691,17 @@ function TradePanel({ game, dispatch, trade }) {
         <div><b>{from.name}</b> dă: {names(trade.giveProps)}{trade.giveMoney ? ` + €${trade.giveMoney}` : ''}</div>
         <div style={{ marginTop: 4 }}><b>{to.name}</b> dă: {names(trade.getProps)}{trade.getMoney ? ` + €${trade.getMoney}` : ''}</div>
       </div>
-      <p className="sub" style={{ margin: '8px 0' }}>Decide {to.name}:</p>
-      <div className="actions">
-        <button className="btn" onClick={() => dispatch('applyAcceptTrade')}>Accept</button>
-        <button className="btn ghost" onClick={() => dispatch('applyDeclineTrade')}>Refuz</button>
-      </div>
+      {canDecide ? (
+        <>
+          <p className="sub" style={{ margin: '8px 0' }}>Decide {online ? 'tu' : to.name}:</p>
+          <div className="actions">
+            <button className="btn" onClick={() => dispatch('applyAcceptTrade')}>Accept</button>
+            <button className="btn ghost" onClick={() => dispatch('applyDeclineTrade')}>Refuz</button>
+          </div>
+        </>
+      ) : (
+        <p className="sub" style={{ margin: '10px 0 0', textAlign: 'center', fontWeight: 800 }}>Aștepți ca {to.name} să decidă…</p>
+      )}
     </div>
   );
 }
