@@ -440,7 +440,6 @@ function Ground() {
 // Vederea „ideală" a unui pion: camera pe LATURA lui, privind peste tablă,
 // astfel încât pionul activ e cel mai aproape de cameră (latura lui în față).
 const easeCubic = (t) => 1 - Math.pow(1 - t, 3);
-const CHASE_OFFSET = new THREE.Vector3(3.5, 5.2, 7);
 const ORBIT_SPEED = 0.09; // rad/s — orbită lentă continuă în full screen (cinematic „viu")
 
 // memorează parametrii unei orbite line în jurul țintei (folosit în idle, full screen)
@@ -452,16 +451,21 @@ function setupOrbit(s, camera, tgt) {
   s.baseAngle = Math.atan2(dz, dx);
   s.idleT0 = performance.now();
 }
-function idealView(tile, immersive) {
-  const { x, z } = pos3(tile);
+// Vederea ideală pornind de la o poziție (x,z) în lume (nu doar de la o căsuță) —
+// folosită atât pentru așezare, cât și pentru URMĂRIREA LINĂ a pionului în mișcare.
+function idealViewXZ(x, z, immersive, out) {
   const len = Math.hypot(x, z) || 1;
   const dx = x / len, dz = z / len;
-  // În full screen ținta e mult mai aproape de pion (și puțin mai sus), ca pionul
-  // să apară în partea de sus a ecranului, deasupra barei de controale.
-  // Full screen: apropiat + centrat pe pion (ținta ~pe pion → pionul e în centrul zonei vizibile).
   const DIST = immersive ? 15 : 27, HEIGHT = immersive ? 9.5 : 16;
   const bias = immersive ? 0.98 : 0.12, ty = immersive ? 0.4 : 0;
-  return { pos: new THREE.Vector3(dx * DIST, HEIGHT, dz * DIST), tgt: new THREE.Vector3(x * bias, ty, z * bias) };
+  const o = out || { pos: new THREE.Vector3(), tgt: new THREE.Vector3() };
+  o.pos.set(dx * DIST, HEIGHT, dz * DIST);
+  o.tgt.set(x * bias, ty, z * bias);
+  return o;
+}
+function idealView(tile, immersive) {
+  const { x, z } = pos3(tile);
+  return idealViewXZ(x, z, immersive);
 }
 
 // Regizor: init pe jucătorul curent · aruncare (picaj zaruri → urmărire pion) →
@@ -471,44 +475,52 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
   const P = useRef({ activeTile, turnId, immersive });
   P.current.activeTile = activeTile; P.current.turnId = turnId; P.current.immersive = immersive;
   const st = useRef({
-    nonce: rollNonce, turn: turnId, phase: 'init', t0: 0, trackT0: 0, moveT0: 0,
+    nonce: rollNonce, turn: turnId, phase: 'init', t0: 0, glideT0: 0, followT0: 0, stoppedAt: 0,
     fromPos: new THREE.Vector3(), fromTgt: new THREE.Vector3(), toPos: new THREE.Vector3(), toTgt: new THREE.Vector3(),
+    view: { pos: new THREE.Vector3(), tgt: new THREE.Vector3() },
     orbitTgt: new THREE.Vector3(), radius: 18, camY: 12, baseAngle: 0, idleT0: 0, orbitImmersive: false,
   });
 
-  // trigger: aruncare
+  // trigger: aruncare → picaj scurt spre zaruri, apoi urmărire lină a pionului
   if (rollNonce !== st.current.nonce) {
     st.current.nonce = rollNonce;
-    st.current.phase = 'dice'; st.current.t0 = performance.now();
+    st.current.phase = 'dice'; st.current.t0 = performance.now(); st.current.stoppedAt = 0;
     st.current.fromPos.copy(camera.position);
     if (controls.current) { st.current.fromTgt.copy(controls.current.target); controls.current.enabled = false; }
   }
-  // trigger: schimbare tură (doar dacă nu suntem în mijlocul unei aruncări)
+  // trigger: schimbare tură → glisare lină spre noul jucător (dacă nu suntem în aruncare)
   if (turnId !== st.current.turn) {
     st.current.turn = turnId;
-    if (st.current.phase === 'idle' || st.current.phase === 'init') st.current.phase = 'startMove';
+    const s = st.current;
+    if (s.phase === 'idle' || s.phase === 'init') {
+      const v = idealView(P.current.activeTile, P.current.immersive);
+      s.fromPos.copy(camera.position);
+      s.fromTgt.copy(controls.current ? controls.current.target : v.tgt);
+      s.toPos.copy(v.pos); s.toTgt.copy(v.tgt);
+      s.glideT0 = performance.now(); s.phase = 'glide';
+      if (controls.current) controls.current.enabled = false;
+    }
   }
 
-  useFrame(() => {
+  // așază camera în idle (activează OrbitControls în normal / orbită lentă în full screen)
+  const settleIdle = (s, tgt) => {
+    if (P.current.immersive) { setupOrbit(s, camera, tgt); if (controls.current) controls.current.enabled = false; }
+    else if (controls.current) { controls.current.enabled = true; controls.current.update?.(); }
+    s.orbitImmersive = P.current.immersive;
+    s.phase = 'idle';
+  };
+
+  useFrame((_, delta) => {
     const s = st.current, now = performance.now();
     const tgt = controls.current ? controls.current.target : new THREE.Vector3();
 
     if (s.phase === 'init') {
       const v = idealView(P.current.activeTile, P.current.immersive);
       camera.position.copy(v.pos); tgt.copy(v.tgt); camera.lookAt(tgt);
-      if (P.current.immersive) { setupOrbit(s, camera, tgt); if (controls.current) controls.current.enabled = false; }
-      else if (controls.current) { controls.current.enabled = true; controls.current.update?.(); }
-      s.orbitImmersive = P.current.immersive;
-      s.phase = 'idle'; return;
+      settleIdle(s, tgt); return;
     }
     if (s.phase === 'idle') {
-      // dacă s-a schimbat modul cât timp eram în idle, reconfigurează
-      if (P.current.immersive !== s.orbitImmersive) {
-        if (P.current.immersive) { setupOrbit(s, camera, tgt); if (controls.current) controls.current.enabled = false; }
-        else if (controls.current) { controls.current.enabled = true; controls.current.update?.(); }
-        s.orbitImmersive = P.current.immersive;
-      }
-      // full screen: orbită lentă continuă în jurul pionului („cinematic incontinuu")
+      if (P.current.immersive !== s.orbitImmersive) settleIdle(s, tgt);
       if (P.current.immersive) {
         const ang = s.baseAngle + ((now - s.idleT0) / 1000) * ORBIT_SPEED;
         camera.position.set(s.orbitTgt.x + Math.cos(ang) * s.radius, s.camY, s.orbitTgt.z + Math.sin(ang) * s.radius);
@@ -518,44 +530,43 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
     }
 
     if (s.phase === 'dice') {
-      // intră lin spre zaruri, apoi ȚINE pe ele (reveal) până se vede clar rezultatul
-      const el = now - s.t0, IN = 420, HOLD_END = 2350;
+      // picaj lin spre zaruri, apoi ține pe ele până rezultatul e clar
+      const el = now - s.t0, IN = 420, MAX_HOLD = 2600;
       const closePos = new THREE.Vector3(2, 5.5, 12), closeTgt = new THREE.Vector3(0, 0.5, 0);
       if (el < IN) { const t = easeCubic(el / IN); camera.position.copy(s.fromPos).lerp(closePos, t); tgt.copy(s.fromTgt).lerp(closeTgt, t); }
-      else if (el < HOLD_END) { camera.position.copy(closePos); tgt.copy(closeTgt); }
-      else { s.phase = 'track'; s.trackT0 = now; }
-      camera.lookAt(tgt); return;
+      else { camera.position.copy(closePos); tgt.copy(closeTgt); }
+      camera.lookAt(tgt);
+      // trece la urmărire FIX când pornește pionul (sincron local+online) sau ca rezervă după MAX_HOLD
+      if (el >= IN && (pawnMoving.current || el > MAX_HOLD)) { s.phase = 'follow'; s.followT0 = now; s.stoppedAt = 0; }
+      return;
     }
 
-    if (s.phase === 'track') {
+    if (s.phase === 'follow') {
+      // urmărire LINĂ: camera se așază pe latura pionului (aceeași încadrare ca la final),
+      // ținta e la nivelul tablei (fără să tremure când pionul saltă).
       const p = pawnPos.current;
-      camera.position.lerp(p.clone().add(CHASE_OFFSET), 0.09);
-      tgt.lerp(p, 0.14); camera.lookAt(tgt);
-      if (!pawnMoving.current && now - s.trackT0 > 500) s.phase = 'startMove';
+      idealViewXZ(p.x, p.z, P.current.immersive, s.view);
+      const a = 1 - Math.exp(-4.5 * delta); // amortizare independentă de framerate
+      camera.position.lerp(s.view.pos, a);
+      tgt.lerp(s.view.tgt, a);
+      camera.lookAt(tgt);
+      // pionul s-a oprit → mai ține puțin, apoi așază exact pe căsuța finală
+      if (!pawnMoving.current) { if (!s.stoppedAt) s.stoppedAt = now; }
+      else s.stoppedAt = 0;
+      if (s.stoppedAt && now - s.stoppedAt > 320 && now - s.followT0 > 260) {
+        const v = idealView(P.current.activeTile, P.current.immersive);
+        camera.position.copy(v.pos); tgt.copy(v.tgt); camera.lookAt(tgt);
+        settleIdle(s, tgt);
+      }
       return;
     }
 
-    if (s.phase === 'startMove') {
-      const v = idealView(P.current.activeTile, P.current.immersive);
-      s.fromPos.copy(camera.position); s.fromTgt.copy(tgt);
-      s.toPos.copy(v.pos); s.toTgt.copy(v.tgt);
-      s.moveT0 = now; s.phase = 'move';
-      if (controls.current) controls.current.enabled = false;
-      return;
-    }
-
-    if (s.phase === 'move') {
-      const t = easeCubic(Math.min(1, (now - s.moveT0) / 850));
+    if (s.phase === 'glide') {
+      const t = easeCubic(Math.min(1, (now - s.glideT0) / 800));
       camera.position.copy(s.fromPos).lerp(s.toPos, t);
       tgt.copy(s.fromTgt).lerp(s.toTgt, t);
       camera.lookAt(tgt);
-      if (t >= 1) {
-        camera.position.copy(s.toPos); tgt.copy(s.toTgt);
-        if (P.current.immersive) { setupOrbit(s, camera, tgt); if (controls.current) controls.current.enabled = false; }
-        else if (controls.current) { controls.current.enabled = true; controls.current.update?.(); }
-        s.orbitImmersive = P.current.immersive;
-        s.phase = 'idle';
-      }
+      if (t >= 1) { camera.position.copy(s.toPos); tgt.copy(s.toTgt); settleIdle(s, tgt); }
     }
   });
   return null;
