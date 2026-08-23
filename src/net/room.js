@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 import {
   addPlayer, setRole, startGame, applyRoll, applyBuy, applyDeclineBuy, applyEndTurn,
-  applyBuild, applyPayIncomeTax, applyBid, applyPassAuction, applyAcceptTrade, applyDeclineTrade,
+  applyBuild, applyBid, applyPassAuction, applyAcceptTrade, applyDeclineTrade,
   applyMortgage, applyUnmortgage, applySellHouse, proposeTrade, applyDeclareBankrupt, rollDicePair,
   applyForceEndTurn,
 } from '../game/engine.js';
@@ -17,7 +17,7 @@ const ROLL_REVEAL_MS = 1800;
 
 // Acțiunile permise, apelate prin nume (ca să le putem trimite pe rețea).
 const ACTIONS = {
-  setRole, startGame, applyBuy, applyDeclineBuy, applyEndTurn, applyBuild, applyPayIncomeTax,
+  setRole, startGame, applyBuy, applyDeclineBuy, applyEndTurn, applyBuild,
   applyBid, applyPassAuction, applyAcceptTrade, applyDeclineTrade, applyMortgage, applyUnmortgage,
   applySellHouse, proposeTrade, applyDeclareBankrupt, applyForceEndTurn,
 };
@@ -71,7 +71,7 @@ export class Room {
     const s = this.state;
     // acțiuni care aparțin jucătorului al cărui rând este
     const CURRENT_ONLY = new Set([
-      'applyBuy', 'applyDeclineBuy', 'applyEndTurn', 'applyBuild', 'applyPayIncomeTax',
+      'applyBuy', 'applyDeclineBuy', 'applyEndTurn', 'applyBuild',
       'applyMortgage', 'applyUnmortgage', 'applySellHouse', 'proposeTrade', 'applyDeclareBankrupt',
     ]);
     if (CURRENT_ONLY.has(fn)) return byId === s.turn;

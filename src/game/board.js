@@ -29,7 +29,7 @@ export const BOARD = [
   /* 1  */ city('Corso Imperiale', 'roma', 60),
   /* 2  */ { type: 'card', name: 'Competitor / Monopolist' },
   /* 3  */ city('Via Appia', 'roma', 60),
-  /* 4  */ { type: 'tax', name: 'Impozit pe venit', amount: 200, kind: 'income' },
+  /* 4  */ { type: 'tax', name: 'Impozit pe venit', amount: 200 },
   /* 5  */ transport('Transport Aerian'),
   /* 6  */ city('Calea Victoriei', 'bucuresti', 100),
   /* 7  */ { type: 'card', name: 'Competitor / Monopolist' },

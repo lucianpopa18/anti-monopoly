@@ -7,7 +7,7 @@ import { gridPos, isCorner } from './game/layout.js';
 import {
   createGame, addPlayer, startGame, applyRoll, applyBuy, applyDeclineBuy,
   applyEndTurn, currentPlayer, ownerOf, rollDicePair,
-  applyBuild, buildableFor, houseCost, applyPayIncomeTax, incomeTaxOptions,
+  applyBuild, buildableFor, houseCost,
   canMortgage, applyMortgage, applyUnmortgage, applySellHouse,
   mustBankrupt, applyDeclareBankrupt, proposeTrade, applyAcceptTrade, applyDeclineTrade,
   applyBid, applyPassAuction, randomCode, playerAssets, ownsWholeGroup,
@@ -16,7 +16,7 @@ import { Room, newId } from './net/room.js';
 
 // Acțiuni apelate prin nume — folosit de dispatch (local aplică direct, online trimite gazdei).
 const ENGINE = {
-  startGame, applyBuy, applyDeclineBuy, applyEndTurn, applyBuild, applyPayIncomeTax,
+  startGame, applyBuy, applyDeclineBuy, applyEndTurn, applyBuild,
   applyBid, applyPassAuction, applyAcceptTrade, applyDeclineTrade, applyMortgage,
   applyUnmortgage, applySellHouse, proposeTrade, applyDeclareBankrupt,
 };
@@ -652,15 +652,12 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
   const decline = () => dispatch('applyDeclineBuy');
   const endTurn = () => { setBuildOpen(false); setManageOpen(false); dispatch('applyEndTurn'); };
   const build = (idx) => { sfx.build(); dispatch('applyBuild', idx); };
-  const payTax = (mode) => { sfx.pay(); dispatch('applyPayIncomeTax', mode); };
 
   const pendingSq = game.pending?.type === 'buy' ? BOARD[game.pending.idx] : null;
   const buyInfo = pendingSq ? cardInfo(game.pending.idx) : null;
-  const taxPending = game.pending?.type === 'incometax';
   const auction = game.pending?.type === 'auction' ? game.pending : null;
   const trade = game.pending?.type === 'trade' ? game.pending : null;
   const debt = game.debt || null;
-  const taxOpts = taxPending ? incomeTaxOptions(game, me.id) : null;
   const rolledDouble = game.dice && game.dice[0] === game.dice[1] && !me?.inJail;
   // Poate arunca doar dacă n-a aruncat încă în tura asta SAU tocmai a dat dublă.
   const canRoll = !game.pending && !game.debt && !rolling && (!game.dice || rolledDouble);
@@ -741,7 +738,7 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
               Rândul lui {currentPlayer(game)?.name}… ⏳
             </div>
           </div>
-        ) : !debt && !pendingSq && !taxPending && !auction && !trade ? (
+        ) : !debt && !pendingSq && !auction && !trade ? (
           <>
             <div className="actions">
               {(!game.dice || rolledDouble) && (
@@ -765,21 +762,6 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
         {/* ---- Card „act de proprietate" (Cumpără) — doar jucătorul curent decide ---- */}
         {pendingSq && buyInfo && (!online || isMyTurn) && (
           <PropertyPopup info={buyInfo} canBuy={me.money >= pendingSq.price} onBuy={buy} onRefuse={decline} />
-        )}
-
-        {/* ---- Impozit pe venit (alegere) — doar jucătorul curent ---- */}
-        {taxPending && taxOpts && (!online || isMyTurn) && (
-          <Modal>
-            <div className="panel" style={{ marginBottom: 0, textAlign: 'center' }}>
-              <div style={{ fontSize: 40 }}>💶</div>
-              <div style={{ fontWeight: 900, fontSize: 18, margin: '4px 0 2px' }}>Impozit pe venit</div>
-              <p className="sub" style={{ margin: '0 0 14px' }}>{me?.name}, alege cum plătești:</p>
-              <div className="actions">
-                <button className="btn" onClick={() => payTax('fixed')}>Fix · €{taxOpts.fixed}</button>
-                <button className="btn ghost" onClick={() => payTax('percent')}>{taxOpts.pct}% active · €{taxOpts.percent}</button>
-              </div>
-            </div>
-          </Modal>
         )}
 
         {/* ---- Licitație ---- */}

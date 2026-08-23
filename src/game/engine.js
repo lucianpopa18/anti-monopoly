@@ -204,7 +204,6 @@ function resolveLanding(s, p, dice) {
     return; // jail (vizită) / restul
   }
   if (sq.type === 'tax') {
-    if (sq.kind === 'income') { s.pending = { type: 'incometax', idx }; return; } // alegere €200 / % active
     p.money -= sq.amount; log(s, `${p.name} plătește ${sq.name} (−€${sq.amount}).`); event(s, { kind: 'tax', who: p.name, name: sq.name, amount: sq.amount }); return;
   }
   if (sq.type === 'card') { drawCard(s, p, false); return; }
@@ -261,7 +260,7 @@ function resolveLandingAfterCard(s, p) {
   const sq = BOARD[p.pos];
   // Bonusul de START e deja acordat în drawCard (când card.moveTo === START) — NU dubla aici.
   if (p.pos === START) return;
-  if (sq.type === 'tax') { if (sq.kind === 'income') { s.pending = { type: 'incometax', idx: p.pos }; } else { p.money -= sq.amount; event(s, { kind: 'tax', who: p.name, name: sq.name, amount: sq.amount }); } return; }
+  if (sq.type === 'tax') { p.money -= sq.amount; event(s, { kind: 'tax', who: p.name, name: sq.name, amount: sq.amount }); return; }
   if (sq.type === 'corner' && sq.kind === 'gotojail') { sendToJail(s, p); event(s, { kind: 'jail', who: p.name, reason: 'gotojail' }); return; }
   if (sq.type === 'corner' && sq.kind === 'fundatia') { return; }
   if (sq.type === 'property' || sq.type === 'transport' || sq.type === 'utility') {
@@ -288,7 +287,7 @@ function resolveFundatia(s, p, die) {
   }
 }
 
-// ---------- IMPOZIT PE VENIT (alegere: fix €200 sau % din active) ----------
+// ---------- VALOARE NETĂ (cash + proprietăți + case), pentru clasament ----------
 export function playerAssets(state, playerId) {
   const p = state.players.find(x => x.id === playerId);
   if (!p) return 0;
@@ -302,25 +301,6 @@ export function playerAssets(state, playerId) {
     }
   });
   return total;
-}
-
-export function incomeTaxOptions(state, playerId) {
-  const p = state.players.find(x => x.id === playerId);
-  const pct = p?.role === 'monopolist' ? 0.20 : 0.10;
-  const percentAmount = Math.round(playerAssets(state, playerId) * pct);
-  return { fixed: 200, percent: percentAmount, pct: Math.round(pct * 100) };
-}
-
-export function applyPayIncomeTax(state, mode) {
-  const s = clone(state);
-  if (s.pending?.type !== 'incometax') return s;
-  const p = currentPlayer(s);
-  const opts = incomeTaxOptions(s, p.id);
-  const amount = mode === 'percent' ? opts.percent : opts.fixed;
-  p.money -= amount;
-  log(s, `${p.name} plătește impozit pe venit: ${mode === 'percent' ? `${opts.pct}% active` : 'fix'} (−€${amount}).`);
-  s.pending = null;
-  return s;
 }
 
 // ---------- CHIRII (Faza 2: roluri, clădiri, companii) ----------
@@ -639,11 +619,6 @@ export function applyForceEndTurn(state, playerId) {
     const nm = BOARD[pend.idx]?.name || '';
     s.pending = null;
     log(s, `${p.name} (deconectat): ${nm} rămâne la bancă.`);
-  } else if (pend?.type === 'incometax') {
-    const opts = incomeTaxOptions(s, p.id);
-    p.money -= opts.fixed; s.pending = null;
-    log(s, `${p.name} (deconectat) plătește impozit fix (−€${opts.fixed}).`);
-    checkDebt(s, p);
   }
   // datorie pe care n-o poate rezolva → iese din joc
   if (s.debt && s.debt.playerId === playerId) return applyDeclareBankrupt(s);

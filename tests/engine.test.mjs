@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createGame, addPlayer, startGame, applyRoll, applyBuy, applyDeclineBuy,
   applyEndTurn, currentPlayer, ownerOf, computeRent, START_MONEY, LAND_START, PASS_START,
-  applyBuild, canBuild, houseCost, buildableFor, applyPayIncomeTax, incomeTaxOptions,
+  applyBuild, canBuild, houseCost, buildableFor,
   applyMortgage, applyUnmortgage, applySellHouse, mustBankrupt, applyDeclareBankrupt,
   proposeTrade, applyAcceptTrade, applyBid, applyPassAuction, playerAssets, applyForceEndTurn,
 } from '../src/game/engine.js';
@@ -223,19 +223,15 @@ test('companii transport: chirie = suma zarului × coeficient după câte deții
   assert.equal(computeRent(g, 5, 8), 8 * 8);
 });
 
-test('impozit pe venit: alegere fix €200 vs % din active', () => {
+test('impozit pe venit: plată fixă €200 (fără alegere de procent)', () => {
   let g = twoPlayerGame();
   const p = g.players[0];
   p.pos = 3; // 1 pas → idx 4 (impozit pe venit)
   g.turn = p.id;
   g = applyRoll(g, [1, 0]);
-  assert.equal(g.pending?.type, 'incometax');
-  const opts = incomeTaxOptions(g, p.id);
-  assert.equal(opts.fixed, 200);
-  assert.equal(opts.percent, Math.round(START_MONEY * 0.10)); // competitor 10%
-  g = applyPayIncomeTax(g, 'fixed');
-  assert.equal(g.players[0].money, START_MONEY - 200);
-  assert.equal(g.pending, null);
+  assert.equal(g.pending, null);                          // fără pending de alegere
+  assert.equal(g.players[0].money, START_MONEY - 200);    // s-au scăzut direct €200
+  assert.equal(g.lastEvent?.kind, 'tax');
 });
 
 test('ipotecă: +½ preț, apoi răscumpărare la +10%', () => {
