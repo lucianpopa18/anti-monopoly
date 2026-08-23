@@ -5,7 +5,7 @@ import {
   applyEndTurn, currentPlayer, ownerOf, computeRent, START_MONEY, LAND_START, PASS_START,
   applyBuild, canBuild, houseCost, buildableFor, applyPayIncomeTax, incomeTaxOptions,
   applyMortgage, applyUnmortgage, applySellHouse, mustBankrupt, applyDeclareBankrupt,
-  proposeTrade, applyAcceptTrade, applyBid, applyPassAuction, playerAssets,
+  proposeTrade, applyAcceptTrade, applyBid, applyPassAuction, playerAssets, applyForceEndTurn,
 } from '../src/game/engine.js';
 import { BOARD } from '../src/game/board.js';
 
@@ -69,6 +69,27 @@ test('completarea unui oraș întreg emite eveniment de monopol', () => {
   assert.equal(s.ownership[last], pid);
   assert.equal(s.lastEvent?.kind, 'monopoly');
   assert.equal(s.lastEvent?.group, 'roma');
+});
+
+test('sări peste jucătorul deconectat: pending buy → la bancă + tura trece', () => {
+  const g = twoPlayerGame();
+  const first = g.turn;
+  const s0 = applyRoll(g, [1, 0]); // pică pe o proprietate liberă → pending buy
+  assert.equal(s0.pending?.type, 'buy');
+  const s = applyForceEndTurn(s0, first);
+  assert.equal(s.pending, null);
+  assert.equal(s.ownership[s0.pending.idx], undefined); // rămâne la bancă
+  assert.notEqual(s.turn, first);                        // tura a trecut la celălalt
+});
+
+test('sări peste jucătorul deconectat în licitație → pasează doar el', () => {
+  const g = twoPlayerGame();
+  const first = g.turn;
+  let s = applyRoll(g, [1, 0]);
+  s = applyDeclineBuy(s);                 // → licitație
+  assert.equal(s.pending?.type, 'auction');
+  s = applyForceEndTurn(s, first);        // primul (deconectat) pasează
+  assert.ok(s.pending?.passed?.includes(first) || s.pending === null);
 });
 
 test('aruncare mută pionul și oferă cumpărarea unei proprietăți libere', () => {

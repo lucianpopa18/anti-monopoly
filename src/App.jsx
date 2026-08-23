@@ -79,11 +79,27 @@ function CoinShower({ trigger }) {
   );
 }
 
+// ---- Sesiune online salvată (pentru reconectare la refresh / pierdere de rețea) ----
+const SESSION_KEY = 'am-session-v1';
+const SESSION_TTL = 6 * 3600 * 1000; // 6 ore
+function saveSession(meta) {
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify({ ...meta, ts: Date.now() })); } catch { /* */ }
+}
+function loadSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+    if (!s || !s.code || !s.myId || Date.now() - (s.ts || 0) > SESSION_TTL) return null;
+    return s;
+  } catch { return null; }
+}
+function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch { /* */ } }
+
 // Clasament „Averea" — valoare netă (cash + proprietăți + case), nr. proprietăți și monopoluri.
-function StandingsModal({ game, myId, onClose }) {
+function StandingsModal({ game, myId, conn, onClose }) {
   const netWorth = (pid) => playerAssets(game, pid);
   const propCount = (pid) => BOARD.filter((sq, i) => game.ownership?.[i] === pid).length;
   const monoCount = (pid) => Object.keys(GROUPS).filter(g => ownsWholeGroup(game, pid, g)).length;
+  const isOff = (pid) => conn && !conn.includes(pid);
   const rows = game.players.slice().sort((a, b) => (b.bankrupt ? -1 : netWorth(b.id)) - (a.bankrupt ? -1 : netWorth(a.id)));
   const medals = ['🥇', '🥈', '🥉'];
   return (
@@ -98,7 +114,7 @@ function StandingsModal({ game, myId, onClose }) {
                 <span style={{ fontSize: 16, width: 22, textAlign: 'center' }}>{p.bankrupt ? '💥' : (medals[i] || i + 1)}</span>
                 <span className="dot" style={{ background: p.color }} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                  <b>{p.name}{p.id === myId ? ' (tu)' : ''} {p.role === 'competitor' ? '🟢' : '🔵'}</b>
+                  <b>{p.name}{p.id === myId ? ' (tu)' : ''} {p.role === 'competitor' ? '🟢' : '🔵'}{isOff(p.id) ? ' 📵' : ''}</b>
                   <span style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>
                     🏠 {propCount(p.id)} {mono > 0 ? `· 🏙️ ${mono} monopol${mono === 1 ? '' : 'uri'}` : ''}
                   </span>
@@ -121,6 +137,7 @@ export default function App() {
   const [game, setGame] = useState(null);
   const [net, setNet] = useState(null);   // Room online; null = local (un telefon)
   const [myId, setMyId] = useState(null); // id-ul jucătorului de pe ACEST telefon (online)
+  const [conn, setConn] = useState(null); // id-urile conectate acum (null = necunoscut/local)
 
   // Sunete contextuale la schimbări de stare (carte trasă / câștig).
   const lastCardRef = useRef(null);
@@ -132,15 +149,46 @@ export default function App() {
     if (game.status === 'ended' && !endedRef.current) { sfx.win(); endedRef.current = true; }
   }, [game]);
 
+  // RECONECTARE: la încărcare, dacă avem o sesiune online salvată, reintrăm în cameră.
+  const reconnectedRef = useRef(false);
+  useEffect(() => {
+    if (reconnectedRef.current) return;
+    reconnectedRef.current = true;
+    const s = loadSession();
+    if (!s) return;
+    const room = new Room({
+      code: s.code, myId: s.myId, isHost: !!s.isHost,
+      initialState: s.isHost ? s.state : null,
+      onState: setGame, joinName: s.isHost ? undefined : s.name,
+    });
+    setNet(room); setMyId(s.myId);
+    if (s.isHost && s.state) setGame(s.state); // gazda își reia starea imediat
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // urmărește cine e conectat acum (prezență)
+  useEffect(() => {
+    if (!net) { setConn(null); return; }
+    net.onConn = (ids) => setConn(ids);
+    return () => { if (net) net.onConn = () => {}; };
+  }, [net]);
+
+  // GAZDA salvează starea completă la fiecare schimbare (ca s-o poată relua la refresh).
+  useEffect(() => {
+    if (!net || !net.isHost || !game || game.status === 'ended') return;
+    const name = game.players.find(p => p.id === myId)?.name;
+    saveSession({ code: net.code, myId, isHost: true, name, state: game });
+  }, [game, net, myId]);
+
   const goOnline = ({ net: n, myId: id }) => { setNet(n); setMyId(id); };
-  const leave = () => { if (net) net.leave(); setNet(null); setMyId(null); setGame(null); };
+  const leave = () => { if (net) net.leave(); clearSession(); setNet(null); setMyId(null); setGame(null); setConn(null); };
 
   if (!game) return net
-    ? <div className="wrap"><div className="title" style={{ marginTop: 40, textAlign: 'center' }}>Se conectează…</div><div className="sub" style={{ textAlign: 'center' }}>Aștept starea camerei de la gazdă.</div><button className="btn ghost" style={{ width: '100%', marginTop: 16 }} onClick={leave}>Anulează</button></div>
+    ? <div className="wrap"><div className="title" style={{ marginTop: 40, textAlign: 'center' }}>Se reconectează…</div><div className="sub" style={{ textAlign: 'center' }}>Reintrăm în camera {net.code}. Dacă nu merge, pornește un joc nou.</div><button className="btn ghost" style={{ width: '100%', marginTop: 16 }} onClick={leave}>Renunță · joc nou</button></div>
     : <Setup onStart={setGame} onOnline={goOnline} bindState={setGame} />;
-  if (game.status === 'lobby') return <Lobby game={game} setGame={setGame} net={net} myId={myId} onLeave={leave} />;
+  if (game.status === 'lobby') return <Lobby game={game} setGame={setGame} net={net} myId={myId} conn={conn} onLeave={leave} />;
   if (game.status === 'ended') return <WinnerScreen game={game} onRestart={leave} />;
-  return <Table game={game} setGame={setGame} net={net} myId={myId} onLeave={leave} />;
+  return <Table game={game} setGame={setGame} net={net} myId={myId} conn={conn} onLeave={leave} />;
 }
 
 function WinnerScreen({ game, onRestart }) {
@@ -204,6 +252,7 @@ function Setup({ onStart, onOnline, bindState }) {
     const id = newId();
     const g = createGame({ code, hostName: name, mode: oMode, hostId: id });
     const net = new Room({ code, myId: id, isHost: true, initialState: g, onState: bindState });
+    saveSession({ code, myId: id, isHost: true, name, state: g });
     bindState(g);            // gazda vede lobby-ul imediat
     onOnline({ net, myId: id });
   };
@@ -214,6 +263,7 @@ function Setup({ onStart, onOnline, bindState }) {
     if (code.length < 4) { setOErr('Cod de cameră invalid.'); return; }
     const id = newId();
     const net = new Room({ code, myId: id, isHost: false, initialState: null, onState: bindState, joinName: name });
+    saveSession({ code, myId: id, isHost: false, name });
     onOnline({ net, myId: id });
   };
 
@@ -477,8 +527,10 @@ function EventPopup({ ev, onClose }) {
   );
 }
 
-function Table({ game, setGame, net, myId, onLeave }) {
+function Table({ game, setGame, net, myId, conn, onLeave }) {
   const online = !!net;
+  const isHost = online && game.hostId === myId;
+  const offline = (pid) => online && conn && !conn.includes(pid);
   const [rolling, setRolling] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -615,6 +667,14 @@ function Table({ game, setGame, net, myId, onLeave }) {
   const buildable = me ? buildableFor(game, me.id) : [];
   const myProps = me ? BOARD.map((sq, i) => i).filter(i => game.ownership?.[i] === me.id) : [];
 
+  // ONLINE: cine blochează jocul fiind deconectat (rândul lui / trebuie să paseze la licitație)?
+  const hostOffline = offline(game.hostId);
+  let blockedBy = null;
+  if (online && conn) {
+    if (auction) blockedBy = game.players.find(p => !p.bankrupt && !auction.passed.includes(p.id) && offline(p.id));
+    else if (offline(game.turn)) blockedBy = game.players.find(p => p.id === game.turn);
+  }
+
   return (
     <div className={`wrap game ${immersive ? 'immersive' : ''} ${shaking ? 'shake' : ''}`} ref={wrapRef}>
       <div className="topBtns">
@@ -628,7 +688,7 @@ function Table({ game, setGame, net, myId, onLeave }) {
       <Suspense fallback={<div className="canvas3d" style={{ display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Se încarcă tabla 3D…</div>}>
         <Board3D game={game} dice={shownDice ?? game.dice} rollNonce={rollNonce} immersive={immersive} />
       </Suspense>
-      {standingsOpen && <StandingsModal game={game} myId={myId} onClose={() => setStandingsOpen(false)} />}
+      {standingsOpen && <StandingsModal game={game} myId={myId} conn={conn} onClose={() => setStandingsOpen(false)} />}
 
       <div className="hud">
         <div className="turnbar">
@@ -649,6 +709,20 @@ function Table({ game, setGame, net, myId, onLeave }) {
 
         {cardPopup && <CardPopup card={cardPopup} onClose={() => setCardPopup(null)} />}
         {!cardPopup && eventPopup && <EventPopup ev={eventPopup} onClose={() => setEventPopup(null)} />}
+
+        {/* ONLINE: jucător deconectat care blochează jocul → gazda poate sări peste */}
+        {blockedBy && (
+          <div className="offlineBanner">
+            <b>📵 {blockedBy.name} s-a deconectat.</b> {isHost ? 'Poți sări peste el ca să continue jocul.' : 'Așteptăm gazda să continue…'}
+            {isHost && (
+              <button className="btn" style={{ width: '100%', marginTop: 8 }}
+                onClick={() => dispatch('applyForceEndTurn', blockedBy.id)}>⏭️ Sări peste {blockedBy.name}</button>
+            )}
+          </div>
+        )}
+        {!blockedBy && hostOffline && (
+          <div className="offlineBanner"><b>📵 Gazda s-a deconectat.</b> Așteptăm să revină… (jocul continuă când gazda se reconectează)</div>
+        )}
 
         {debt && (
           <div className="debtBanner">
@@ -760,8 +834,8 @@ function Table({ game, setGame, net, myId, onLeave }) {
 
         <div className="moneyList">
           {game.players.map(p => (
-            <span key={p.id} className={`moneyChip ${p.id === game.turn ? 'turn' : ''}`}>
-              <span className="dot" style={{ background: p.color }} /> {p.name}{p.id === myId ? ' (tu)' : ''}: €{p.money}
+            <span key={p.id} className={`moneyChip ${p.id === game.turn ? 'turn' : ''} ${offline(p.id) ? 'off' : ''}`}>
+              <span className="dot" style={{ background: p.color }} /> {p.name}{p.id === myId ? ' (tu)' : ''}: €{p.money}{offline(p.id) ? ' 📵' : ''}
             </span>
           ))}
         </div>

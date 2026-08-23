@@ -318,6 +318,13 @@ button:active { transform: scale(0.97); }
 .monoHint { font-size: 0.85rem; font-weight: 700; margin-top: 12px; opacity: 0.92; }
 @keyframes monoPop { 0% { transform: scale(0.4) rotate(-6deg); opacity: 0; } 100% { transform: scale(1) rotate(0); opacity: 1; } }
 @keyframes monoPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.14); } }
+/* Banner deconectare (online) */
+.offlineBanner { margin-top: 10px; background: #FFF4E0; border: 1px solid #F0CE86; border-radius: 12px;
+  padding: 12px; font-size: 13.5px; font-weight: 700; color: #6b4e1a; line-height: 1.4; animation: slideIn 0.28s ease; }
+.moneyChip.off { opacity: 0.5; }
+.wrap.game.immersive .offlineBanner { background: rgba(70,54,20,0.92); color: #F5E4C0; border-color: rgba(224,168,46,0.5);
+  backdrop-filter: blur(6px); max-width: min(360px, 88vw); }
+
 .wrap.game.shake { animation: screenShake 0.45s cubic-bezier(.36,.07,.19,.97); }
 @keyframes screenShake {
   10%,90% { transform: translateX(-2px); } 20%,80% { transform: translateX(3px); }

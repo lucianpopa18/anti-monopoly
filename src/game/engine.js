@@ -620,6 +620,41 @@ export function applyEndTurn(state) {
   return s;
 }
 
+// ---------- ONLINE: deblocare când un jucător e DECONECTAT ----------
+// Rezolvă automat decizia jucătorului `playerId` (implicit refuz/pas/impozit fix) și
+// încheie tura, ca jocul să nu se blocheze dacă cineva a picat conexiunea.
+export function applyForceEndTurn(state, playerId) {
+  let s = clone(state);
+  if (s.status !== 'playing') return s;
+  const pend = s.pending;
+  // licitație: jucătorul deconectat pasează (oriunde ar fi rândul)
+  if (pend?.type === 'auction') return applyPassAuction(s, playerId);
+  // schimb către el: refuză
+  if (pend?.type === 'trade' && pend.toId === playerId) return applyDeclineTrade(s);
+  // restul se aplică doar dacă E rândul lui
+  if (s.turn !== playerId) return s;
+  const p = currentPlayer(s);
+  if (!p) return s;
+  if (pend?.type === 'buy') {
+    const nm = BOARD[pend.idx]?.name || '';
+    s.pending = null;
+    log(s, `${p.name} (deconectat): ${nm} rămâne la bancă.`);
+  } else if (pend?.type === 'incometax') {
+    const opts = incomeTaxOptions(s, p.id);
+    p.money -= opts.fixed; s.pending = null;
+    log(s, `${p.name} (deconectat) plătește impozit fix (−€${opts.fixed}).`);
+    checkDebt(s, p);
+  }
+  // datorie pe care n-o poate rezolva → iese din joc
+  if (s.debt && s.debt.playerId === playerId) return applyDeclareBankrupt(s);
+  if (s.pending || s.debt) return s; // altceva încă blochează
+  // încheie tura FORȚAT (fără bonus de dublă pentru cel deconectat)
+  s.lastCard = null; s.lastEvent = null; s.doublesCount = 0; s.dice = null;
+  log(s, `${p.name} (deconectat) a fost sărit peste.`);
+  advanceTurn(s);
+  return s;
+}
+
 // ---------- utils ----------
 export function randomCode() {
   const letters = 'ABCDEFGHJKLMNPRSTUVWXYZ';

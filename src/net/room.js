@@ -4,6 +4,7 @@ import {
   addPlayer, setRole, startGame, applyRoll, applyBuy, applyDeclineBuy, applyEndTurn,
   applyBuild, applyPayIncomeTax, applyBid, applyPassAuction, applyAcceptTrade, applyDeclineTrade,
   applyMortgage, applyUnmortgage, applySellHouse, proposeTrade, applyDeclareBankrupt, rollDicePair,
+  applyForceEndTurn,
 } from '../game/engine.js';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -18,7 +19,7 @@ const ROLL_REVEAL_MS = 1800;
 const ACTIONS = {
   setRole, startGame, applyBuy, applyDeclineBuy, applyEndTurn, applyBuild, applyPayIncomeTax,
   applyBid, applyPassAuction, applyAcceptTrade, applyDeclineTrade, applyMortgage, applyUnmortgage,
-  applySellHouse, proposeTrade, applyDeclareBankrupt,
+  applySellHouse, proposeTrade, applyDeclareBankrupt, applyForceEndTurn,
 };
 
 // Cameră ONLINE, host-autoritar: gazda ține starea, aplică acțiunile și o trimite
@@ -79,6 +80,7 @@ export class Room {
     // schimbul e decis DOAR de cel care primește oferta
     if (fn === 'applyAcceptTrade' || fn === 'applyDeclineTrade') return s.pending?.type === 'trade' && byId === s.pending.toId;
     if (fn === 'startGame') return byId === s.hostId; // doar gazda pornește
+    if (fn === 'applyForceEndTurn') return byId === s.hostId; // doar gazda poate sări peste un deconectat
     return true; // setRole etc. (lobby)
   }
 
