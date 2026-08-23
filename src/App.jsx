@@ -14,6 +14,8 @@ import {
 } from './game/engine.js';
 import { Room, newId } from './net/room.js';
 
+const PAWN_STEP_SPEED = 7; // căsuțe/secundă — trebuie să fie egal cu STEP_SPEED din Board3D.jsx
+
 // Acțiuni apelate prin nume — folosit de dispatch (local aplică direct, online trimite gazdei).
 const ENGINE = {
   startGame, applyBuy, applyDeclineBuy, applyEndTurn, applyBuild,
@@ -550,27 +552,64 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.lastEvent?.seq]);
 
+  // Pop-up-urile (cumpărare / eveniment / carte) apar ABIA după ce pionul termină mutarea.
+  // La aruncare ascundem; apoi calculăm durata mutării (nr. căsuțe ÷ viteză) și le arătăm după.
+  const [reveal, setReveal] = useState(true);
+  const revealTimer = useRef(null);
+  const lastPosRef = useRef(null);        // pozițiile pionilor înainte de mutarea curentă
+  const rollSeqRef2 = useRef(game.rollSeq || 0);
+  const blockReveal = () => { setReveal(false); clearTimeout(revealTimer.current); };
+  useEffect(() => () => clearTimeout(revealTimer.current), []);
+  // programează dezvăluirea pop-up-urilor după ce pionul s-a mutat (durată = nr. căsuțe / STEP_SPEED)
+  useEffect(() => {
+    if (lastPosRef.current === null) {
+      lastPosRef.current = {}; game.players.forEach(p => { lastPosRef.current[p.id] = p.pos; });
+    }
+    const seq = game.rollSeq || 0;
+    if (seq !== rollSeqRef2.current) {
+      rollSeqRef2.current = seq;
+      const mover = currentPlayer(game);
+      const from = mover ? lastPosRef.current[mover.id] : undefined;
+      let tiles = 0;
+      if (mover && typeof from === 'number') {
+        const fwd = (mover.pos - from + 40) % 40;
+        tiles = (fwd >= 1 && fwd <= 12) ? fwd : 0; // >12 sau înapoi = teleport (instant)
+      }
+      const delay = tiles === 0 ? 250 : Math.round((tiles / PAWN_STEP_SPEED) * 1000) + 350;
+      clearTimeout(revealTimer.current);
+      revealTimer.current = setTimeout(() => setReveal(true), delay);
+    }
+    const cur = {}; game.players.forEach(p => { cur[p.id] = p.pos; });
+    lastPosRef.current = cur;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.rollSeq]);
+
   // ---- JUICE: monede / confetti / tremur / vibrație pe evenimente ----
   const [coinKey, setCoinKey] = useState(0);
   const [celebrate, setCelebrate] = useState(0);
   const [shaking, setShaking] = useState(false);
   const [standingsOpen, setStandingsOpen] = useState(false);
+  // Efectele „juice" (monede/shake/confetti) pornesc ODATĂ cu pop-up-urile, adică ABIA
+  // când pionul s-a oprit (reveal === true), nu în timp ce se mișcă.
+  const juiceRef = useRef({ ev: 0, card: 0 });
   useEffect(() => {
+    if (!reveal) return;
     const ev = game.lastEvent;
-    if (!ev?.seq) return;
-    if (ev.kind === 'monopoly') { setCelebrate(k => k + 1); setCoinKey(k => k + 1); haptic('heavy'); sfx.win(); }
-    else if (ev.kind === 'start' || (ev.kind === 'fundatia' && ev.amount > 0)) { setCoinKey(k => k + 1); haptic('light'); }
-    else if (ev.kind === 'rent' || ev.kind === 'tax') { setShaking(true); haptic('heavy'); }
-    else if (ev.kind === 'jail' || (ev.kind === 'fundatia' && ev.amount < 0)) { setShaking(true); haptic('medium'); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.lastEvent?.seq]);
-  useEffect(() => {
+    if (ev?.seq && ev.seq !== juiceRef.current.ev) {
+      juiceRef.current.ev = ev.seq;
+      if (ev.kind === 'monopoly') { setCelebrate(k => k + 1); setCoinKey(k => k + 1); haptic('heavy'); sfx.win(); }
+      else if (ev.kind === 'start' || (ev.kind === 'fundatia' && ev.amount > 0)) { setCoinKey(k => k + 1); haptic('light'); }
+      else if (ev.kind === 'rent' || ev.kind === 'tax') { setShaking(true); haptic('heavy'); }
+      else if (ev.kind === 'jail' || (ev.kind === 'fundatia' && ev.amount < 0)) { setShaking(true); haptic('medium'); }
+    }
     const c = game.lastCard;
-    if (!c?.seq) return;
-    if (c.money > 0) { setCoinKey(k => k + 1); haptic('light'); }
-    else if (c.money < 0) { setShaking(true); haptic('medium'); }
+    if (c?.seq && c.seq !== juiceRef.current.card) {
+      juiceRef.current.card = c.seq;
+      if (c.money > 0) { setCoinKey(k => k + 1); haptic('light'); }
+      else if (c.money < 0) { setShaking(true); haptic('medium'); }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.lastCard?.seq]);
+  }, [reveal, game.lastEvent?.seq, game.lastCard?.seq]);
   useEffect(() => {
     if (!celebrate) return;
     const t = setTimeout(() => setCelebrate(0), 3200);
@@ -595,7 +634,7 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
   // starea de după (faza 2), ca la local (zar întâi, apoi mutare — nu simultan).
   useEffect(() => {
     if (!net) return;
-    net.onRolling = (d) => { sfx.roll(); setShownDice(d); setRollNonce(n => n + 1); };
+    net.onRolling = (d) => { sfx.roll(); setShownDice(d); setRollNonce(n => n + 1); blockReveal(); };
     return () => { if (net) net.onRolling = null; };
   }, [net]);
   // ONLINE: deblochează butonul când sosește starea de după aruncare (faza 2).
@@ -645,6 +684,7 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
     setShownDice(d);
     setRollNonce(n => n + 1);
     setRolling(true);
+    blockReveal(); // ascunde pop-up-urile până se așază pionul
     // zarurile se rostogolesc ~1.5s + pauză de reveal ~0.8s, apoi pionul se mișcă
     setTimeout(() => { setGame(g => applyRoll(g, d)); setRolling(false); }, 2300);
   };
@@ -704,8 +744,8 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
           </div>
         )}
 
-        {cardPopup && <CardPopup card={cardPopup} onClose={() => setCardPopup(null)} />}
-        {!cardPopup && eventPopup && <EventPopup ev={eventPopup} onClose={() => setEventPopup(null)} />}
+        {reveal && cardPopup && <CardPopup card={cardPopup} onClose={() => setCardPopup(null)} />}
+        {reveal && !cardPopup && eventPopup && <EventPopup ev={eventPopup} onClose={() => setEventPopup(null)} />}
 
         {/* ONLINE: jucător deconectat care blochează jocul → gazda poate sări peste */}
         {blockedBy && (
@@ -759,8 +799,8 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
           </>
         ) : null}
 
-        {/* ---- Card „act de proprietate" (Cumpără) — doar jucătorul curent decide ---- */}
-        {pendingSq && buyInfo && (!online || isMyTurn) && (
+        {/* ---- Card „act de proprietate" (Cumpără) — doar jucătorul curent decide, după ce s-a oprit pionul ---- */}
+        {reveal && pendingSq && buyInfo && (!online || isMyTurn) && (
           <PropertyPopup info={buyInfo} canBuy={me.money >= pendingSq.price} onBuy={buy} onRefuse={decline} />
         )}
 
