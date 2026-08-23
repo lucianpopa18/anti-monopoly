@@ -4,7 +4,7 @@ import {
   addPlayer, setRole, startGame, applyRoll, applyBuy, applyDeclineBuy, applyEndTurn,
   applyBuild, applyBid, applyPassAuction, applyAcceptTrade, applyDeclineTrade,
   applyMortgage, applyUnmortgage, applySellHouse, proposeTrade, applyDeclareBankrupt, rollDicePair,
-  applyForceEndTurn,
+  applyForceEndTurn, applyPayJail,
 } from '../game/engine.js';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -19,7 +19,7 @@ const ROLL_REVEAL_MS = 1800;
 const ACTIONS = {
   setRole, startGame, applyBuy, applyDeclineBuy, applyEndTurn, applyBuild,
   applyBid, applyPassAuction, applyAcceptTrade, applyDeclineTrade, applyMortgage, applyUnmortgage,
-  applySellHouse, proposeTrade, applyDeclareBankrupt, applyForceEndTurn,
+  applySellHouse, proposeTrade, applyDeclareBankrupt, applyForceEndTurn, applyPayJail,
 };
 
 // Cameră ONLINE, host-autoritar: gazda ține starea, aplică acțiunile și o trimite
@@ -73,6 +73,7 @@ export class Room {
     const CURRENT_ONLY = new Set([
       'applyBuy', 'applyDeclineBuy', 'applyEndTurn', 'applyBuild',
       'applyMortgage', 'applyUnmortgage', 'applySellHouse', 'proposeTrade', 'applyDeclareBankrupt',
+      'applyPayJail',
     ]);
     if (CURRENT_ONLY.has(fn)) return byId === s.turn;
     // la licitație poți licita/pasa DOAR pentru tine (nu pentru alt jucător)

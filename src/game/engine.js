@@ -175,6 +175,23 @@ export function applyRoll(state, dice) {
   return s;
 }
 
+// ---------- iese din închisoare plătind €50 (înainte de a arunca zarul) ----------
+// Trebuie apelată ÎNAINTE de aruncare (s.dice === null). Astfel jucătorul nu poate
+// „încerca" mai întâi o dublă și, dacă nu-i iese, să plătească și să arunce din nou.
+export function applyPayJail(state, playerId) {
+  const s = clone(state);
+  if (s.status !== 'playing' || s.pending) return s;
+  const p = currentPlayer(s);
+  if (!p || p.id !== playerId) return s;   // doar jucătorul de pe rând
+  if (!p.inJail) return s;                  // nu e la închisoare
+  if (s.dice) return s;                     // a aruncat deja în tura asta → prea târziu
+  if (p.money < 50) return s;               // nu-și permite
+  p.money -= 50;
+  p.inJail = false; p.jailTurns = 0;
+  log(s, `${p.name} plătește €50 și iese din închisoare.`);
+  return s;
+}
+
 // Dacă jucătorul a ajuns pe minus, intră „în datorie": trebuie să facă rost de
 // bani (ipotecă / vinde case) sau declară faliment.
 function checkDebt(s, p) {

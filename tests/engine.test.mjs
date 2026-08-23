@@ -6,6 +6,7 @@ import {
   applyBuild, canBuild, houseCost, buildableFor,
   applyMortgage, applyUnmortgage, applySellHouse, mustBankrupt, applyDeclareBankrupt,
   proposeTrade, applyAcceptTrade, applyBid, applyPassAuction, playerAssets, applyForceEndTurn,
+  applyPayJail,
 } from '../src/game/engine.js';
 import { BOARD } from '../src/game/board.js';
 
@@ -178,6 +179,39 @@ test('3 duble la rând trimit la închisoare', () => {
   g = applyRoll(g, [3, 3]);                       // dublă 3 → jail
   assert.equal(g.players[0].inJail, true);
   assert.equal(g.players[0].pos, 10);
+});
+
+test('plătește €50 și iese din închisoare (înainte de aruncare)', () => {
+  let g = twoPlayerGame();
+  const pid = g.players[0].id;
+  g.players[0].inJail = true; g.players[0].jailTurns = 1; g.players[0].pos = 10;
+  const before = g.players[0].money;
+  g = applyPayJail(g, pid);
+  assert.equal(g.players[0].inJail, false);
+  assert.equal(g.players[0].jailTurns, 0);
+  assert.equal(g.players[0].money, before - 50);
+  // acum poate arunca normal (fără să depindă de dublă)
+  g = applyRoll(g, [2, 3]);
+  assert.equal(g.players[0].pos, 15);
+});
+
+test('nu poți plăti €50 DUPĂ ce ai aruncat (anti-abuz)', () => {
+  let g = twoPlayerGame();
+  const pid = g.players[0].id;
+  g.players[0].inJail = true; g.players[0].pos = 10;
+  g = applyRoll(g, [2, 3]);      // a încercat aruncarea, nu e dublă → rămâne
+  const before = g.players[0].money;
+  g = applyPayJail(g, pid);      // prea târziu
+  assert.equal(g.players[0].inJail, true);
+  assert.equal(g.players[0].money, before); // nu s-a scos nimic
+});
+
+test('nu poți plăti €50 dacă nu ești la închisoare', () => {
+  let g = twoPlayerGame();
+  const pid = g.players[0].id;
+  const before = g.players[0].money;
+  g = applyPayJail(g, pid);
+  assert.equal(g.players[0].money, before);
 });
 
 test('refuz cumpărare pornește licitația', () => {

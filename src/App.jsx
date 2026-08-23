@@ -688,6 +688,7 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
     // zarurile se rostogolesc ~1.5s + pauză de reveal ~0.8s, apoi pionul se mișcă
     setTimeout(() => { setGame(g => applyRoll(g, d)); setRolling(false); }, 2300);
   };
+  const payJail = () => { sfx.pay(); haptic('light'); dispatch('applyPayJail', myId); };
   const buy = () => { sfx.pay(); dispatch('applyBuy'); };
   const decline = () => dispatch('applyDeclineBuy');
   const endTurn = () => { setBuildOpen(false); setManageOpen(false); dispatch('applyEndTurn'); };
@@ -780,10 +781,19 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
           </div>
         ) : !debt && !pendingSq && !auction && !trade ? (
           <>
+            {me?.inJail && !game.dice && (
+              <div className="jailBanner">
+                🔒 <b>Ești la închisoare.</b> Aruncă și speră la o dublă, sau plătește €50 ca să ieși acum.
+                <button className="btn" style={{ width: '100%', marginTop: 8 }}
+                  onClick={payJail} disabled={me.money < 50 || rolling}>
+                  💵 Plătește €50 și ieși
+                </button>
+              </div>
+            )}
             <div className="actions">
               {(!game.dice || rolledDouble) && (
                 <button className="btn" onClick={roll} disabled={!canRoll}>
-                  {rolling ? '…' : rolledDouble ? 'Dublă! Mai arunci 🎲' : '🎲 Aruncă zarul'}
+                  {rolling ? '…' : rolledDouble ? 'Dublă! Mai arunci 🎲' : me?.inJail ? '🎲 Aruncă (dublă = ieși)' : '🎲 Aruncă zarul'}
                 </button>
               )}
               {game.dice && !rolledDouble && <button className="btn" onClick={endTurn}>Termină tura →</button>}
