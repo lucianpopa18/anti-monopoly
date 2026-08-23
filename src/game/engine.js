@@ -250,7 +250,8 @@ function moveSimple(s, p, steps) {
 // Rezolvă noua căsuță după o carte de mutare, dar NU mai trage altă carte (fără recursie).
 function resolveLandingAfterCard(s, p) {
   const sq = BOARD[p.pos];
-  if (p.pos === START) { p.money += LAND_START; return; }
+  // Bonusul de START e deja acordat în drawCard (când card.moveTo === START) — NU dubla aici.
+  if (p.pos === START) return;
   if (sq.type === 'tax') { if (sq.kind === 'income') { s.pending = { type: 'incometax', idx: p.pos }; } else { p.money -= sq.amount; event(s, { kind: 'tax', who: p.name, name: sq.name, amount: sq.amount }); } return; }
   if (sq.type === 'corner' && sq.kind === 'gotojail') { sendToJail(s, p); event(s, { kind: 'jail', who: p.name, reason: 'gotojail' }); return; }
   if (sq.type === 'corner' && sq.kind === 'fundatia') { return; }

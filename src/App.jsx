@@ -396,13 +396,20 @@ function Table({ game, setGame, net, myId, onLeave }) {
     else setGame(g => ENGINE[fn](g, ...args));
   };
 
-  // ONLINE: animă zarul când sosește o aruncare nouă (rollSeq crește în stare).
-  const rollSeqRef = useRef(game.rollSeq || 0);
+  // ONLINE: gazda anunță zarul (faza 1) → animăm zarul; pionul se mută abia când sosește
+  // starea de după (faza 2), ca la local (zar întâi, apoi mutare — nu simultan).
+  useEffect(() => {
+    if (!net) return;
+    net.onRolling = (d) => { sfx.roll(); setShownDice(d); setRollNonce(n => n + 1); };
+    return () => { if (net) net.onRolling = null; };
+  }, [net]);
+  // ONLINE: deblochează butonul când sosește starea de după aruncare (faza 2).
+  const onlineRollSeqRef = useRef(game.rollSeq || 0);
   useEffect(() => {
     if (!online) return;
-    if ((game.rollSeq || 0) !== rollSeqRef.current) {
-      rollSeqRef.current = game.rollSeq || 0;
-      if (game.dice) { sfx.roll(); setShownDice(game.dice); setRollNonce(n => n + 1); }
+    if ((game.rollSeq || 0) !== onlineRollSeqRef.current) {
+      onlineRollSeqRef.current = game.rollSeq || 0;
+      setRolling(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.rollSeq]);
@@ -434,7 +441,8 @@ function Table({ game, setGame, net, myId, onLeave }) {
     if (game.pending || game.debt || rolling) return;
     if (online) {
       if (!isMyTurn) return;
-      net.dispatch('__roll'); // gazda generează zarul; animația pornește când sosește starea
+      setRolling(true);       // blochează până sosește starea de după (evită dublu-click)
+      net.dispatch('__roll'); // gazda generează zarul; zarul se animează, apoi se mută pionul
       return;
     }
     const d = rollDicePair();

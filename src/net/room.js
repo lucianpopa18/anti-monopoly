@@ -11,6 +11,9 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: false },
 });
 
+// Cât timp „cad" zarurile înainte ca pionul să se miște (ca la local: zar întâi, apoi mutare).
+const ROLL_REVEAL_MS = 1800;
+
 // Acțiunile permise, apelate prin nume (ca să le putem trimite pe rețea).
 const ACTIONS = {
   setRole, startGame, applyBuy, applyDeclineBuy, applyEndTurn, applyBuild, applyPayIncomeTax,
@@ -27,12 +30,18 @@ export class Room {
     this.state = initialState || null;
     this.onState = onState || (() => {});
     this.onConn = onConn || (() => {});
+    this.onRolling = null;      // setat de UI: animă zarul înainte ca pionul să se miște
+    this._rollTimer = null;
     this.channel = supabase.channel('am-' + code, {
       config: { broadcast: { self: false }, presence: { key: myId } },
     });
 
     this.channel.on('broadcast', { event: 'state' }, ({ payload }) => {
       this.state = payload.state; this.onState(payload.state);
+    });
+    // Faza 1 a aruncării: doar zarul (animație pe toate telefoanele); mutarea vine în starea de după.
+    this.channel.on('broadcast', { event: 'rolling' }, ({ payload }) => {
+      if (this.onRolling) this.onRolling(payload.dice);
     });
     if (isHost) {
       this.channel.on('broadcast', { event: 'action' }, ({ payload }) => this._handle(payload));
@@ -63,7 +72,12 @@ export class Room {
       if (fn === '__join') { this._apply(addPlayer(this.state, args[0], args[1], byId)); return; }
       if (fn === '__roll') {
         const d = rollDicePair();
-        this._apply(applyRoll(this.state, d));
+        // Faza 1: anunță zarul tuturor (animație) + animă local la gazdă.
+        this._send('rolling', { dice: d });
+        if (this.onRolling) this.onRolling(d);
+        // Faza 2: după ce cad zarurile, aplică mutarea și trimite starea.
+        clearTimeout(this._rollTimer);
+        this._rollTimer = setTimeout(() => this._apply(applyRoll(this.state, d)), ROLL_REVEAL_MS);
         return;
       }
       const f = ACTIONS[fn];
@@ -80,7 +94,7 @@ export class Room {
   // Gazda setează starea direct (ex: la creare/lobby local).
   setHostState(next) { if (this.isHost) this._apply(next); }
 
-  leave() { try { supabase.removeChannel(this.channel); } catch { /* */ } }
+  leave() { clearTimeout(this._rollTimer); try { supabase.removeChannel(this.channel); } catch { /* */ } }
 }
 
 export function newId() { return 'p_' + Math.random().toString(36).slice(2, 9); }

@@ -29,6 +29,21 @@ test('roluri echilibrate la adăugare', () => {
   assert.equal(g.players[1].role, 'monopolist'); // se echilibrează
 });
 
+test('cartea „mergi la START" dă €200 O SINGURĂ dată (nu €400)', () => {
+  const g = twoPlayerGame();
+  assert.equal(BOARD[7].type, 'card'); // poz. 7 = căsuță de carte
+  const orig = Math.random;
+  Math.random = () => 0.7; // COMPETITOR_CARDS[floor(0.7*12)=8] = „mergi la START" (moveTo:0)
+  try {
+    const s = applyRoll(g, [3, 4]); // START(0) → poz.7 (carte)
+    const p = currentPlayer(s);
+    assert.equal(p.pos, 0);                       // dus înapoi pe START
+    assert.equal(p.money, START_MONEY + LAND_START); // +200, NU +400
+  } finally {
+    Math.random = orig;
+  }
+});
+
 test('aruncare mută pionul și oferă cumpărarea unei proprietăți libere', () => {
   const g = twoPlayerGame();
   const s = applyRoll(g, [1, 0]); // 1 pas → Corso Imperiale (idx 1)
