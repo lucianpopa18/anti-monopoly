@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { sfx } from './sfx.js';
 import Board3D from './three/Board3D.jsx';
 import { BOARD, GROUPS } from './game/board.js';
+import { cardInfo } from './game/cardinfo.js';
 import { gridPos, isCorner } from './game/layout.js';
 import {
   createGame, addPlayer, startGame, applyRoll, applyBuy, applyDeclineBuy,
@@ -254,6 +255,52 @@ function CardPopup({ card, onClose }) {
   );
 }
 
+// Card „act de proprietate" la aterizarea pe ceva cumpărabil (proprietate/utilitate/transport).
+function PropertyPopup({ info, canBuy, onBuy, onRefuse }) {
+  const isProp = info.type === 'property';
+  return (
+    <div className="cardPopupBackdrop">
+      <div className="deed">
+        <div className="deedHead" style={{ background: info.color, color: isProp ? '#111' : info.headText }}>
+          <div className="deedKind">{isProp ? (info.groupName || 'Proprietate') : info.kindLabel}</div>
+          <div className="deedName">{isProp ? info.name : `${info.icon} ${info.name}`}</div>
+        </div>
+        <div className="deedBody">
+          {isProp ? (
+            <>
+              <div className="deedRow deedRow2"><span>Preț teren</span><b>€{info.price}</b></div>
+              <div className="deedRow deedRow2"><span>Cost casă</span><b>🟢 €{info.houseComp} · 🔵 €{info.houseMono}</b></div>
+              <div className="deedRentsTitle">Chirii</div>
+              <div className="deedRentHead"><span>🟢&nbsp;Comp.</span><span></span><span>🔵&nbsp;Mono.</span></div>
+              {info.rents.map(r => (
+                <div className="deedRentRow" key={r.label}>
+                  <span className="cc">€{r.comp}</span><span className="ll">{r.label}</span><span className="mm">€{r.mono}</span>
+                </div>
+              ))}
+              <div className="deedNote">Monopolistul: chiriile de sus sunt cu orașul complet (monopol). Ipotecă: €{info.mortgage} (½ preț).</div>
+            </>
+          ) : (
+            <>
+              <div className="deedBigIcon">{info.icon}</div>
+              <div className="deedRow deedRow2"><span>Preț</span><b>€{info.price}</b></div>
+              <div className="deedRow deedRow2"><span>Ipotecă</span><b>€{info.mortgage}</b></div>
+              <div className="deedRentsTitle">Chirie = suma zarului ×</div>
+              {info.rows.map(r => (
+                <div className="deedFeeRow" key={r.count}><span>{r.count} {info.unitLabel}</span><b>× {r.mult}</b></div>
+              ))}
+              <div className="deedNote">Cu cât deții mai multe, cu atât chiria crește.</div>
+            </>
+          )}
+          <div className="deedActions">
+            <button className="btn" onClick={onBuy} disabled={!canBuy}>Cumpără · €{info.price}</button>
+            <button className="btn ghost" onClick={onRefuse}>Refuz</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Table({ game, setGame, net, myId, onLeave }) {
   const online = !!net;
   const [rolling, setRolling] = useState(false);
@@ -333,6 +380,7 @@ function Table({ game, setGame, net, myId, onLeave }) {
   const payTax = (mode) => { sfx.pay(); dispatch('applyPayIncomeTax', mode); };
 
   const pendingSq = game.pending?.type === 'buy' ? BOARD[game.pending.idx] : null;
+  const buyInfo = pendingSq ? cardInfo(game.pending.idx) : null;
   const taxPending = game.pending?.type === 'incometax';
   const auction = game.pending?.type === 'auction' ? game.pending : null;
   const trade = game.pending?.type === 'trade' ? game.pending : null;
@@ -391,11 +439,8 @@ function Table({ game, setGame, net, myId, onLeave }) {
               Rândul lui {currentPlayer(game)?.name}… ⏳
             </div>
           </div>
-        ) : pendingSq ? (
-          <div className="actions">
-            <button className="btn" onClick={buy} disabled={me.money < pendingSq.price}>Cumpără {pendingSq.name} · €{pendingSq.price}</button>
-            <button className="btn ghost" onClick={decline}>Refuz</button>
-          </div>
+        ) : pendingSq && buyInfo ? (
+          <PropertyPopup info={buyInfo} canBuy={me.money >= pendingSq.price} onBuy={buy} onRefuse={decline} />
         ) : taxPending ? (
           <div className="actions">
             <button className="btn" onClick={() => payTax('fixed')}>Fix · €{taxOpts.fixed}</button>

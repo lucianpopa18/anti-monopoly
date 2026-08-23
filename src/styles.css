@@ -225,6 +225,35 @@ button:active { transform: scale(0.97); }
 @media (prefers-reduced-motion: reduce) {
   .cardPopup { animation: cardBackdropFade 0.2s ease; }
 }
+
+/* ===== Card „act de proprietate" (Cumpără) ===== */
+.deed {
+  width: 100%; max-width: 330px; background: #FBF7EE; color: #17130c;
+  border-radius: 14px; overflow: hidden; border: 3px solid #17130c;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+  animation: cardDeal 0.5s cubic-bezier(0.22, 1, 0.36, 1); transform-origin: 50% 100%;
+  max-height: 88vh; display: flex; flex-direction: column;
+}
+.deedHead { padding: 12px 14px; text-align: center; border-bottom: 3px solid #17130c; }
+.deedKind { font-size: 0.7rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.9; }
+.deedName { font-size: 1.35rem; font-weight: 900; line-height: 1.1; margin-top: 2px; }
+.deedBody { padding: 12px 15px 14px; overflow-y: auto; }
+.deedRow2 { display: flex; align-items: center; justify-content: space-between; font-size: 0.98rem; padding: 3px 0; }
+.deedRow2 span { font-weight: 700; }
+.deedRow2 b { font-weight: 900; }
+.deedBigIcon { text-align: center; font-size: 3rem; margin: 4px 0 8px; }
+.deedRentsTitle { text-align: center; font-weight: 900; font-size: 1.05rem; margin: 10px 0 4px; }
+.deedRentHead { display: grid; grid-template-columns: 1fr 1fr 1fr; font-size: 0.72rem; font-weight: 900; color: #6b6355; padding-bottom: 2px; }
+.deedRentHead span:last-child { text-align: right; }
+.deedRentRow { display: grid; grid-template-columns: 1fr 1.1fr 1fr; align-items: center; padding: 3px 0; border-top: 1px solid #E7DFCE; font-size: 0.95rem; }
+.deedRentRow .cc { font-weight: 900; color: #2E9E5B; }
+.deedRentRow .mm { font-weight: 900; color: #2E5BD8; text-align: right; }
+.deedRentRow .ll { text-align: center; font-weight: 700; color: #5a5346; font-size: 0.86rem; }
+.deedFeeRow { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-top: 1px solid #E7DFCE; font-size: 0.98rem; font-weight: 700; }
+.deedFeeRow b { font-weight: 900; }
+.deedNote { margin-top: 10px; font-size: 0.76rem; color: #6b6355; line-height: 1.4; text-align: center; }
+.deedActions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.deedActions .btn { min-height: 46px; }
 .debtBanner { animation: slideIn 0.28s ease; }
 @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 .moneyChip .dot { transition: background 0.2s; }
