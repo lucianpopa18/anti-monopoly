@@ -4,7 +4,7 @@
 // acțiunea, trimite starea rezultată tuturor). Randomul zarului se poate injecta
 // (pentru teste + pentru „gazda aruncă, ceilalți văd").
 
-import { BOARD, START, JAIL, GOTOJAIL, FUNDATIA, groupIndexes, GROUP_SIZE } from './board.js';
+import { BOARD, GROUPS, START, JAIL, GOTOJAIL, FUNDATIA, groupIndexes, GROUP_SIZE } from './board.js';
 import { deckFor } from './cards.js';
 
 export const START_MONEY = 1500;
@@ -33,6 +33,15 @@ export function currentPlayer(state) {
 function event(state, ev) {
   state.eventSeq = (state.eventSeq || 0) + 1;
   state.lastEvent = { ...ev, seq: state.eventSeq };
+}
+// Dacă jucătorul `pid` tocmai a completat un ORAȘ întreg (monopol) achiziționând căsuța `idx`,
+// emite un eveniment de sărbătoare (pentru animația „wow" din UI).
+function maybeMonopolyEvent(state, pid, idx) {
+  const sq = BOARD[idx];
+  if (!sq || sq.type !== 'property') return;
+  if (!ownsWholeGroup(state, pid, sq.group)) return;
+  const p = state.players.find(x => x.id === pid);
+  event(state, { kind: 'monopoly', who: p?.name, whoId: pid, group: sq.group, groupName: GROUPS[sq.group]?.name || 'orașul' });
 }
 export function ownerOf(state, idx) {
   const pid = state.ownership?.[idx];
@@ -287,8 +296,9 @@ export function playerAssets(state, playerId) {
   BOARD.forEach((sq, i) => {
     if (state.ownership?.[i] === playerId && 'price' in sq) {
       total += state.mortgaged?.[i] ? Math.round(sq.price / 2) : sq.price;
+      // doar proprietățile pot avea case; houseCost e Infinity pt. transport/utilități → evită 0*Infinity=NaN
       const houses = state.buildings?.[i] || 0;
-      total += houses * houseCost(i, p.role);
+      if (sq.type === 'property' && houses > 0) total += houses * houseCost(i, p.role);
     }
   });
   return total;
@@ -405,6 +415,9 @@ export function applyBuy(state) {
     p.money -= sq.price;
     s.ownership[idx] = p.id;
     log(s, `${p.name} cumpără ${sq.name} (−€${sq.price}).`);
+    s.pending = null;
+    maybeMonopolyEvent(s, p.id, idx);
+    return s;
   }
   s.pending = null;
   return s;
@@ -467,7 +480,9 @@ export function maxRaisable(state, playerId) {
     if (state.ownership?.[i] !== playerId || !('price' in sq)) return;
     if (!state.mortgaged?.[i]) sum += Math.round(sq.price / 2);
     const p = state.players.find(x => x.id === playerId);
-    sum += (state.buildings?.[i] || 0) * Math.round(houseCost(i, p?.role || 'competitor') / 2);
+    const houses = state.buildings?.[i] || 0;
+    // doar proprietățile au case (houseCost e Infinity pt. transport/utilități → evită 0*Infinity=NaN)
+    if (sq.type === 'property' && houses > 0) sum += houses * Math.round(houseCost(i, p?.role || 'competitor') / 2);
   });
   return sum;
 }
@@ -538,6 +553,9 @@ export function applyAcceptTrade(state) {
   to.money += t.giveMoney - t.getMoney;
   log(s, `🤝 Schimb acceptat între ${from.name} și ${to.name}.`);
   s.pending = null;
+  // sărbătoare dacă vreun jucător a completat un oraș prin schimb
+  t.giveProps.forEach(i => maybeMonopolyEvent(s, to.id, i));
+  t.getProps.forEach(i => maybeMonopolyEvent(s, from.id, i));
   return s;
 }
 export function applyDeclineTrade(state) {
@@ -573,6 +591,9 @@ function finalizeAuction(s) {
     const w = s.players.find(p => p.id === a.highBidderId);
     w.money -= a.highBid; s.ownership[a.idx] = w.id;
     log(s, `🔨 ${w.name} câștigă licitația pentru ${BOARD[a.idx].name} (€${a.highBid}).`);
+    s.pending = null;
+    maybeMonopolyEvent(s, w.id, a.idx);
+    return;
   } else {
     log(s, `Nicio ofertă — ${BOARD[a.idx].name} rămâne la bancă.`);
   }

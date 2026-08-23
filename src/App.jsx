@@ -10,7 +10,7 @@ import {
   applyBuild, buildableFor, houseCost, applyPayIncomeTax, incomeTaxOptions,
   canMortgage, applyMortgage, applyUnmortgage, applySellHouse,
   mustBankrupt, applyDeclareBankrupt, proposeTrade, applyAcceptTrade, applyDeclineTrade,
-  applyBid, applyPassAuction, randomCode,
+  applyBid, applyPassAuction, randomCode, playerAssets, ownsWholeGroup,
 } from './game/engine.js';
 import { Room, newId } from './net/room.js';
 
@@ -20,6 +20,102 @@ const ENGINE = {
   applyBid, applyPassAuction, applyAcceptTrade, applyDeclineTrade, applyMortgage,
   applyUnmortgage, applySellHouse, proposeTrade, applyDeclareBankrupt,
 };
+
+// Vibrație scurtă pe telefon (best-effort; iOS Safari o ignoră, dar nu strică).
+function haptic(kind = 'light') {
+  if (typeof navigator === 'undefined' || !navigator.vibrate) return;
+  const pat = kind === 'heavy' ? [25, 30, 25] : kind === 'medium' ? 18 : 9;
+  try { navigator.vibrate(pat); } catch { /* */ }
+}
+
+const CONFETTI_COLORS = ['#2E9E5B', '#2E5BD8', '#E0A82E', '#EC407A', '#FF7043', '#42A5F5', '#EF5350', '#66BB6A'];
+
+// Confetti (pur CSS, fără librării). Se folosește la câștig + la monopol.
+function Confetti({ count = 90 }) {
+  const pieces = useRef(null);
+  if (!pieces.current) {
+    pieces.current = Array.from({ length: count }, (_, i) => ({
+      left: Math.random() * 100,
+      delay: Math.random() * 0.5,
+      dur: 2.4 + Math.random() * 2,
+      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      size: 7 + Math.random() * 7,
+      sway: (Math.random() * 2 - 1) * 70,
+      spin: 360 + Math.random() * 720,
+    }));
+  }
+  return (
+    <div className="confetti" aria-hidden="true">
+      {pieces.current.map((p, i) => (
+        <span key={i} style={{
+          left: p.left + '%', width: p.size, height: p.size * 0.62, background: p.color,
+          animationDelay: p.delay + 's', animationDuration: p.dur + 's',
+          '--sway': p.sway + 'px', '--spin': p.spin + 'deg',
+        }} />
+      ))}
+    </div>
+  );
+}
+
+// Ploaie de monede la încasări (START, cărți bune, monopol).
+function CoinShower({ trigger }) {
+  const [coins, setCoins] = useState([]);
+  useEffect(() => {
+    if (!trigger) return;
+    setCoins(Array.from({ length: 16 }, (_, i) => ({
+      id: `${trigger}-${i}`, left: 8 + Math.random() * 84,
+      delay: Math.random() * 0.35, dur: 0.9 + Math.random() * 0.7,
+    })));
+    const t = setTimeout(() => setCoins([]), 1900);
+    return () => clearTimeout(t);
+  }, [trigger]);
+  if (!coins.length) return null;
+  return (
+    <div className="coinShower" aria-hidden="true">
+      {coins.map(c => (
+        <span key={c.id} style={{ left: c.left + '%', animationDelay: c.delay + 's', animationDuration: c.dur + 's' }}>🪙</span>
+      ))}
+    </div>
+  );
+}
+
+// Clasament „Averea" — valoare netă (cash + proprietăți + case), nr. proprietăți și monopoluri.
+function StandingsModal({ game, myId, onClose }) {
+  const netWorth = (pid) => playerAssets(game, pid);
+  const propCount = (pid) => BOARD.filter((sq, i) => game.ownership?.[i] === pid).length;
+  const monoCount = (pid) => Object.keys(GROUPS).filter(g => ownsWholeGroup(game, pid, g)).length;
+  const rows = game.players.slice().sort((a, b) => (b.bankrupt ? -1 : netWorth(b.id)) - (a.bankrupt ? -1 : netWorth(a.id)));
+  const medals = ['🥇', '🥈', '🥉'];
+  return (
+    <Modal onClose={onClose}>
+      <div className="panel" style={{ marginBottom: 0 }}>
+        <div style={{ fontWeight: 900, marginBottom: 10 }}>📊 Averea jucătorilor</div>
+        <div className="plist">
+          {rows.map((p, i) => {
+            const mono = monoCount(p.id);
+            return (
+              <div className="pchip" key={p.id}>
+                <span style={{ fontSize: 16, width: 22, textAlign: 'center' }}>{p.bankrupt ? '💥' : (medals[i] || i + 1)}</span>
+                <span className="dot" style={{ background: p.color }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                  <b>{p.name}{p.id === myId ? ' (tu)' : ''} {p.role === 'competitor' ? '🟢' : '🔵'}</b>
+                  <span style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>
+                    🏠 {propCount(p.id)} {mono > 0 ? `· 🏙️ ${mono} monopol${mono === 1 ? '' : 'uri'}` : ''}
+                  </span>
+                </div>
+                <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                  <b style={{ fontSize: 15 }}>€{p.bankrupt ? 0 : netWorth(p.id)}</b>
+                  <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>cash €{p.money}</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <p className="deedNote" style={{ marginTop: 10 }}>„Averea" = cash + proprietăți (½ dacă ipotecate) + case. Cel mai bogat câștigă la final.</p>
+      </div>
+    </Modal>
+  );
+}
 
 export default function App() {
   const [game, setGame] = useState(null);
@@ -51,6 +147,7 @@ function WinnerScreen({ game, onRestart }) {
   const w = game.players.find(p => p.id === game.winnerId);
   return (
     <div className="wrap">
+      <Confetti count={130} />
       <div style={{ textAlign: 'center', marginTop: 40 }}>
         <div style={{ fontSize: 64 }}>🏆</div>
         <div className="title" style={{ marginTop: 8 }}>{w?.name} câștigă!</div>
@@ -318,13 +415,26 @@ function Modal({ children, onClose }) {
 // Se închide singur după câteva secunde sau la atingere.
 function EventPopup({ ev, onClose }) {
   useEffect(() => {
-    const t = setTimeout(onClose, ev.kind === 'rent' ? 2800 : 2200);
+    const t = setTimeout(onClose, ev.kind === 'monopoly' ? 3200 : ev.kind === 'rent' ? 2800 : 2200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ev.seq]);
 
   let icon = '❓', title = '', sub = '', amount = null, amountColor = '#111';
   let headColor = '#37474F', headText = '#fff';
+
+  if (ev.kind === 'monopoly') {
+    return (
+      <div className="cardPopupBackdrop" onClick={onClose}>
+        <div className="monoPop" onClick={(e) => e.stopPropagation()}>
+          <div className="monoBurst">🏙️</div>
+          <div className="monoTitle">MONOPOL!</div>
+          <div className="monoSub"><b>{ev.who}</b> controlează tot <b>{ev.groupName}</b></div>
+          <div className="monoHint">Chirii mult mai mari pe acest oraș 💰</div>
+        </div>
+      </div>
+    );
+  }
 
   if (ev.kind === 'rent') {
     const info = cardInfo(ev.idx);
@@ -387,6 +497,39 @@ function Table({ game, setGame, net, myId, onLeave }) {
     if (game.lastEvent && game.lastEvent.seq) setEventPopup(game.lastEvent);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.lastEvent?.seq]);
+
+  // ---- JUICE: monede / confetti / tremur / vibrație pe evenimente ----
+  const [coinKey, setCoinKey] = useState(0);
+  const [celebrate, setCelebrate] = useState(0);
+  const [shaking, setShaking] = useState(false);
+  const [standingsOpen, setStandingsOpen] = useState(false);
+  useEffect(() => {
+    const ev = game.lastEvent;
+    if (!ev?.seq) return;
+    if (ev.kind === 'monopoly') { setCelebrate(k => k + 1); setCoinKey(k => k + 1); haptic('heavy'); sfx.win(); }
+    else if (ev.kind === 'start' || (ev.kind === 'fundatia' && ev.amount > 0)) { setCoinKey(k => k + 1); haptic('light'); }
+    else if (ev.kind === 'rent' || ev.kind === 'tax') { setShaking(true); haptic('heavy'); }
+    else if (ev.kind === 'jail' || (ev.kind === 'fundatia' && ev.amount < 0)) { setShaking(true); haptic('medium'); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.lastEvent?.seq]);
+  useEffect(() => {
+    const c = game.lastCard;
+    if (!c?.seq) return;
+    if (c.money > 0) { setCoinKey(k => k + 1); haptic('light'); }
+    else if (c.money < 0) { setShaking(true); haptic('medium'); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.lastCard?.seq]);
+  useEffect(() => {
+    if (!celebrate) return;
+    const t = setTimeout(() => setCelebrate(0), 3200);
+    return () => clearTimeout(t);
+  }, [celebrate]);
+  useEffect(() => {
+    if (!shaking) return;
+    const t = setTimeout(() => setShaking(false), 460);
+    return () => clearTimeout(t);
+  }, [shaking]);
+
   const wrapRef = useRef(null);
   const me = currentPlayer(game);
   const isMyTurn = online ? game.turn === myId : true;
@@ -473,15 +616,19 @@ function Table({ game, setGame, net, myId, onLeave }) {
   const myProps = me ? BOARD.map((sq, i) => i).filter(i => game.ownership?.[i] === me.id) : [];
 
   return (
-    <div className={`wrap game ${immersive ? 'immersive' : ''}`} ref={wrapRef}>
+    <div className={`wrap game ${immersive ? 'immersive' : ''} ${shaking ? 'shake' : ''}`} ref={wrapRef}>
       <div className="topBtns">
         {online && <button className="fsBtn" onClick={onLeave} aria-label="Ieși din cameră">🚪</button>}
+        <button className="fsBtn" onClick={() => setStandingsOpen(true)} aria-label="Averea jucătorilor">📊</button>
         <button className="fsBtn" onClick={toggleMute} aria-label={muted ? 'Activează sunetul' : 'Oprește sunetul'}>{muted ? '🔇' : '🔊'}</button>
         <button className="fsBtn" onClick={toggleImmersive} aria-label={immersive ? 'Ieși din ecran complet' : 'Ecran complet'}>{immersive ? '✕' : '⛶'}</button>
       </div>
+      <CoinShower trigger={coinKey} />
+      {celebrate > 0 && <Confetti count={90} />}
       <Suspense fallback={<div className="canvas3d" style={{ display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>Se încarcă tabla 3D…</div>}>
         <Board3D game={game} dice={shownDice ?? game.dice} rollNonce={rollNonce} immersive={immersive} />
       </Suspense>
+      {standingsOpen && <StandingsModal game={game} myId={myId} onClose={() => setStandingsOpen(false)} />}
 
       <div className="hud">
         <div className="turnbar">

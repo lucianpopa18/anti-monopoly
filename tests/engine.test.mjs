@@ -5,7 +5,7 @@ import {
   applyEndTurn, currentPlayer, ownerOf, computeRent, START_MONEY, LAND_START, PASS_START,
   applyBuild, canBuild, houseCost, buildableFor, applyPayIncomeTax, incomeTaxOptions,
   applyMortgage, applyUnmortgage, applySellHouse, mustBankrupt, applyDeclareBankrupt,
-  proposeTrade, applyAcceptTrade, applyBid, applyPassAuction,
+  proposeTrade, applyAcceptTrade, applyBid, applyPassAuction, playerAssets,
 } from '../src/game/engine.js';
 import { BOARD } from '../src/game/board.js';
 
@@ -42,6 +42,33 @@ test('cartea „mergi la START" dă €200 O SINGURĂ dată (nu €400)', () => 
   } finally {
     Math.random = orig;
   }
+});
+
+test('valoarea netă e un număr valid când deții transport/utilitate (nu NaN)', () => {
+  const g = twoPlayerGame();
+  const pid = g.turn;
+  const transportI = BOARD.findIndex(sq => sq.type === 'transport');
+  const utilI = BOARD.findIndex(sq => sq.type === 'utility');
+  g.ownership = { [transportI]: pid, [utilI]: pid };
+  const nw = playerAssets(g, pid);
+  assert.ok(Number.isFinite(nw), `valoarea netă trebuie să fie finită, a fost ${nw}`);
+  // cash 1500 + preț transport 200 + utilitate 150
+  assert.equal(nw, 1500 + BOARD[transportI].price + BOARD[utilI].price);
+});
+
+test('completarea unui oraș întreg emite eveniment de monopol', () => {
+  const g = twoPlayerGame();
+  const pid = g.turn;
+  const romaIdx = BOARD.map((sq, i) => ({ sq, i })).filter(x => x.sq.type === 'property' && x.sq.group === 'roma').map(x => x.i);
+  g.ownership = {};
+  romaIdx.slice(0, -1).forEach(i => { g.ownership[i] = pid; }); // toate din grup MINUS una
+  const last = romaIdx[romaIdx.length - 1];
+  g.players.find(p => p.id === pid).pos = last;
+  g.pending = { type: 'buy', idx: last };
+  const s = applyBuy(g);
+  assert.equal(s.ownership[last], pid);
+  assert.equal(s.lastEvent?.kind, 'monopoly');
+  assert.equal(s.lastEvent?.group, 'roma');
 });
 
 test('aruncare mută pionul și oferă cumpărarea unei proprietăți libere', () => {

@@ -95,12 +95,21 @@ function Tile({ i, game }) {
         </group>
       )}
 
-      {/* marcaj proprietar */}
+      {/* marcaj proprietar — RAMĂ colorată pe muchiile căsuței (vizibil dintr-o privire) */}
       {owner && (
-        <mesh position={[w / 2 - 0.16, H / 2 + 0.02, w / 2 - 0.16]}>
-          <cylinderGeometry args={[0.1, 0.1, 0.06, 16]} />
-          <meshStandardMaterial color={owner.color} />
-        </mesh>
+        <group position={[0, H / 2 + 0.012, 0]}>
+          {[
+            { p: [0, 0, w / 2 - 0.03], g: [w, 0.07, 0.06] },
+            { p: [0, 0, -(w / 2 - 0.03)], g: [w, 0.07, 0.06] },
+            { p: [w / 2 - 0.03, 0, 0], g: [0.06, 0.07, w] },
+            { p: [-(w / 2 - 0.03), 0, 0], g: [0.06, 0.07, w] },
+          ].map((b, k) => (
+            <mesh key={k} position={b.p}>
+              <boxGeometry args={b.g} />
+              <meshStandardMaterial color={owner.color} emissive={owner.color} emissiveIntensity={0.35} roughness={0.5} />
+            </mesh>
+          ))}
+        </group>
       )}
     </group>
   );
