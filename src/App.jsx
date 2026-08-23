@@ -10,7 +10,7 @@ import {
   applyBuild, buildableFor, houseCost,
   canMortgage, applyMortgage, applyUnmortgage, applySellHouse,
   mustBankrupt, applyDeclareBankrupt, proposeTrade, applyAcceptTrade, applyDeclineTrade,
-  applyBid, applyPassAuction, randomCode, playerAssets, ownsWholeGroup,
+  applyBid, applyPassAuction, randomCode, playerAssets, ownsWholeGroup, applyPayJail,
 } from './game/engine.js';
 import { Room, newId } from './net/room.js';
 
@@ -35,7 +35,7 @@ class ErrorBoundary extends Component {
 const ENGINE = {
   startGame, applyBuy, applyDeclineBuy, applyEndTurn, applyBuild,
   applyBid, applyPassAuction, applyAcceptTrade, applyDeclineTrade, applyMortgage,
-  applyUnmortgage, applySellHouse, proposeTrade, applyDeclareBankrupt,
+  applyUnmortgage, applySellHouse, proposeTrade, applyDeclareBankrupt, applyPayJail,
 };
 
 // Vibrație scurtă pe telefon (best-effort; iOS Safari o ignoră, dar nu strică).
@@ -657,7 +657,7 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
   // dispatch: local aplică direct; online trimite gazdei (care aplică + retrimite starea).
   const dispatch = (fn, ...args) => {
     if (net) net.dispatch(fn, ...args);
-    else setGame(g => ENGINE[fn](g, ...args));
+    else { const f = ENGINE[fn]; if (f) setGame(g => f(g, ...args)); }
   };
 
   // ONLINE: gazda anunță zarul (faza 1) → animăm zarul; pionul se mută abia când sosește
@@ -718,7 +718,7 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
     // zarurile se rostogolesc ~1.5s + pauză de reveal ~0.8s, apoi pionul se mișcă
     setTimeout(() => { setGame(g => applyRoll(g, d)); setRolling(false); }, 2300);
   };
-  const payJail = () => { sfx.pay(); haptic('light'); dispatch('applyPayJail', myId); };
+  const payJail = () => { sfx.pay(); haptic('light'); dispatch('applyPayJail', me.id); };
   const buy = () => { sfx.pay(); dispatch('applyBuy'); };
   const decline = () => dispatch('applyDeclineBuy');
   const endTurn = () => { setBuildOpen(false); setManageOpen(false); dispatch('applyEndTurn'); };
