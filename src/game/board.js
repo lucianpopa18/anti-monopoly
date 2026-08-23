@@ -35,7 +35,7 @@ export const BOARD = [
   /* 7  */ { type: 'card', name: 'Competitor / Monopolist' },
   /* 8  */ city('Bulevardul Magheru', 'bucuresti', 100),
   /* 9  */ city('Șoseaua Kiseleff', 'bucuresti', 120),
-  /* 10 */ { type: 'corner', kind: 'jail', name: 'Închisoare / Vizită' },
+  /* 10 */ { type: 'corner', kind: 'jail', name: 'Închisoare / Vacanță' },
   /* 11 */ city('Plaza Mayor', 'madrid', 140),
   /* 12 */ utility('Compania de Electricitate'),
   /* 13 */ city('Gran Vía', 'madrid', 140),

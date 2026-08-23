@@ -66,13 +66,16 @@ function Tile({ i, game }) {
         </mesh>
       )}
 
-      {/* nume — la centru */}
-      <group position={[0, H / 2 + 0.02, 0]} rotation={[-Math.PI / 2, 0, ry]}>
-        <Text fontSize={corner ? 0.24 : 0.19} maxWidth={w * 0.86} textAlign="center"
-          anchorX="center" anchorY="middle" color="#16181A" lineHeight={1}>
-          {label}
-        </Text>
-      </group>
+      {/* nume — la centru (colțul Închisoare are vizualul lui, împărțit pe diagonală) */}
+      {!(corner && sq.kind === 'jail') && (
+        <group position={[0, H / 2 + 0.02, 0]} rotation={[-Math.PI / 2, 0, ry]}>
+          <Text fontSize={corner ? 0.24 : 0.19} maxWidth={w * 0.86} textAlign="center"
+            anchorX="center" anchorY="middle" color="#16181A" lineHeight={1}>
+            {label}
+          </Text>
+        </group>
+      )}
+      {corner && sq.kind === 'jail' && <JailCorner w={w} x={x} z={z} ry={ry} />}
       {/* preț — spre muchia EXTERIOARĂ (departe de bară) */}
       {price && (
         <group position={[OUT[0] * (w * 0.32), H / 2 + 0.02, OUT[1] * (w * 0.32)]} rotation={[-Math.PI / 2, 0, ry]}>
@@ -633,4 +636,42 @@ function cornerShort(sq) {
   if (sq.kind === 'fundatia') return 'FUNDAȚIA';
   if (sq.kind === 'gotojail') return 'LA ÎNCHISOARE';
   return sq.name;
+}
+
+// Colțul „Închisoare" — pătratul e împărțit pe diagonală: triunghiul EXTERIOR
+// (spre colțul tablei) = închisoare; triunghiul INTERIOR (spre centru) = vacanță.
+// Pici aici din zar = doar vizită (vezi engine.resolveLanding); la închisoare
+// ajungi doar de pe „La Închisoare" (căsuța 30) sau dintr-un cartonaș.
+function triGeo(pts) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
+  g.computeVertexNormals();
+  return g;
+}
+function JailCorner({ w, x, z, ry }) {
+  const sx = Math.sign(x) || 1, sz = Math.sign(z) || 1;
+  const h = w / 2;
+  const y = H / 2 + 0.006;
+  // colț exterior = (sx,sz); colț interior = (-sx,-sz); linia diag. leagă celelalte două colțuri.
+  const geoJail = useMemo(() => triGeo([sx * h, y, sz * h, sx * h, y, -sz * h, -sx * h, y, sz * h]), [w, sx, sz]);
+  const geoVac = useMemo(() => triGeo([-sx * h, y, -sz * h, -sx * h, y, sz * h, sx * h, y, -sz * h]), [w, sx, sz]);
+  const dx = 2 * sx * h, dz = -2 * sz * h;
+  const lineLen = Math.hypot(dx, dz) * 0.98;
+  const lineRotY = -Math.atan2(dz, dx);
+  return (
+    <group>
+      <mesh geometry={geoJail}><meshBasicMaterial color="#E8933B" toneMapped={false} side={THREE.DoubleSide} /></mesh>
+      <mesh geometry={geoVac}><meshBasicMaterial color="#63C08A" toneMapped={false} side={THREE.DoubleSide} /></mesh>
+      <mesh position={[0, H / 2 + 0.009, 0]} rotation={[0, lineRotY, 0]}>
+        <boxGeometry args={[lineLen, 0.03, 0.055]} />
+        <meshBasicMaterial color="#16181A" toneMapped={false} />
+      </mesh>
+      <group position={[sx * w / 6, H / 2 + 0.02, sz * w / 6]} rotation={[-Math.PI / 2, 0, ry]}>
+        <Text fontSize={0.155} maxWidth={w * 0.5} textAlign="center" anchorX="center" anchorY="middle" color="#16181A" lineHeight={1}>ÎNCHISOARE</Text>
+      </group>
+      <group position={[-sx * w / 6, H / 2 + 0.02, -sz * w / 6]} rotation={[-Math.PI / 2, 0, ry]}>
+        <Text fontSize={0.155} maxWidth={w * 0.5} textAlign="center" anchorX="center" anchorY="middle" color="#16181A" lineHeight={1}>VACANȚĂ</Text>
+      </group>
+    </group>
+  );
 }

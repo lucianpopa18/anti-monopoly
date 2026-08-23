@@ -181,6 +181,14 @@ test('3 duble la rând trimit la închisoare', () => {
   assert.equal(g.players[0].pos, 10);
 });
 
+test('pici pe căsuța 10 din zar = doar vizită (NU rămâi la închisoare)', () => {
+  let g = twoPlayerGame();
+  g.players[0].pos = 6;
+  g = applyRoll(g, [1, 3]); // 6 → 10 (colțul Închisoare)
+  assert.equal(g.players[0].pos, 10);
+  assert.equal(g.players[0].inJail, false); // e vacanță, nu închisoare
+});
+
 test('plătește €50 și iese din închisoare (înainte de aruncare)', () => {
   let g = twoPlayerGame();
   const pid = g.players[0].id;
