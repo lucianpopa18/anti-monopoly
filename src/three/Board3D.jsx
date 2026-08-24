@@ -105,33 +105,32 @@ function Tile({ i, game }) {
   );
 }
 
-// Steguleț în culoarea proprietarului, plantat la muchia EXTERIOARĂ a căsuței;
-// pânza flutură ușor (viață pe tablă).
+// Steag CULCAT pe sol (fără băț), întins în fața căsuței (spre exterior), în
+// culoarea proprietarului; pânza unduiește ca și cum flutură pe jos.
 function Flag({ color, out, w }) {
-  const wob = useRef();
+  const mesh = useRef();
+  const geo = useMemo(() => {
+    const g = new THREE.PlaneGeometry(0.52, 0.32, 12, 1);
+    g.rotateX(-Math.PI / 2);   // culcat pe sol (normal în sus)
+    g.translate(0, 0, -0.16);  // se întinde de la muchia exterioară spre interiorul căsuței
+    return g;
+  }, []);
   useFrame(({ clock }) => {
-    if (wob.current) wob.current.rotation.y = Math.sin(clock.elapsedTime * 3.2 + out[0] * 2 + out[1] * 3) * 0.38;
+    const g = mesh.current?.geometry; if (!g) return;
+    const t = clock.elapsedTime, p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const z = p.getZ(i);                         // -0.32..0 (0 = muchia liberă, spre exterior)
+      const fade = 1 + z / 0.32;                   // unduire mai mare spre muchia liberă
+      p.setY(i, 0.03 + Math.sin(z * 11 + t * 4.5) * 0.03 * fade);
+    }
+    p.needsUpdate = true;
   });
   const rotY = Math.atan2(out[0], out[1]);
-  const px = out[0] * (w / 2 - 0.04), pz = out[1] * (w / 2 - 0.04);
-  const poleH = 0.46;
+  const px = out[0] * (w / 2 - 0.03), pz = out[1] * (w / 2 - 0.03);
   return (
-    <group position={[px, H / 2, pz]} rotation={[0, rotY, 0]}>
-      <mesh position={[0, poleH / 2, 0]} castShadow>
-        <cylinderGeometry args={[0.018, 0.018, poleH, 8]} />
-        <meshStandardMaterial color="#5b4632" roughness={0.85} />
-      </mesh>
-      <mesh position={[0, poleH, 0]}>
-        <sphereGeometry args={[0.035, 10, 10]} />
-        <meshStandardMaterial color="#D9B44A" metalness={0.5} roughness={0.3} />
-      </mesh>
-      <group ref={wob} position={[0, poleH - 0.11, 0]}>
-        <mesh position={[0.18, 0, 0]} castShadow>
-          <planeGeometry args={[0.36, 0.22]} />
-          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.28} roughness={0.5} side={THREE.DoubleSide} />
-        </mesh>
-      </group>
-    </group>
+    <mesh ref={mesh} geometry={geo} position={[px, H / 2 + 0.01, pz]} rotation={[0, rotY, 0]} castShadow>
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.22} roughness={0.6} side={THREE.DoubleSide} />
+    </mesh>
   );
 }
 
