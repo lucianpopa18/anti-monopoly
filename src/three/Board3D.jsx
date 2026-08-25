@@ -105,29 +105,30 @@ function Tile({ i, game }) {
   );
 }
 
-// Fanion CULCAT pe blatul căsuței, în banda DE JOS (muchia exterioară), lat cât
-// toată proprietatea (colț-la-colț), cu marginea exterioară tăiată în „coadă de
-// rândunică" (V) lipită de muchia de jos. Culoarea = culoarea PIONULUI proprietar.
-const FLAG_BW = 0.98, FLAG_BL = 0.34, FLAG_NOTCH = 0.12; // lățime / adâncime bandă / adâncime coadă (× w)
+// Fanion CULCAT PE SOL (la baza căsuței), la piciorul muchiei EXTERIOARE, întins
+// afară pe pământ, lat cât toată proprietatea (colț-la-colț), cu capătul tăiat în
+// „coadă de rândunică" (V) spre exterior. Culoarea = culoarea PIONULUI proprietar.
+const FLAG_BW = 0.98, FLAG_BL = 0.26, FLAG_NOTCH = 0.10; // lățime / lungime spre exterior / adâncime coadă (× w)
+const FLAG_Y = -0.005;                                   // nivelul solului (aproape de baza căsuței)
 function Flag({ color, out, w }) {
   const geo = useMemo(() => {
     const BW = w * FLAG_BW, BL = w * FLAG_BL, NOTCH = w * FLAG_NOTCH;
     const s = new THREE.Shape();
-    s.moveTo(-BW / 2, 0);          // muchie prinsă (spre interiorul căsuței)
+    s.moveTo(-BW / 2, 0);          // muchie prinsă (la piciorul căsuței)
     s.lineTo(BW / 2, 0);
-    s.lineTo(BW / 2, BL);          // colț exterior dreapta (la muchia de jos)
+    s.lineTo(BW / 2, BL);          // colț exterior dreapta (spre pământ)
     s.lineTo(0, BL - NOTCH);       // crestătura din mijloc (coadă de rândunică)
-    s.lineTo(-BW / 2, BL);         // colț exterior stânga (la muchia de jos)
+    s.lineTo(-BW / 2, BL);         // colț exterior stânga (spre pământ)
     s.closePath();
     const g = new THREE.ShapeGeometry(s);
-    g.rotateX(Math.PI / 2);        // planul formei (XY) → culcat pe blat (XZ); +Y formă → +Z local (spre muchia de jos)
+    g.rotateX(Math.PI / 2);        // planul formei (XY) → culcat pe sol (XZ); +Y formă → +Z local (spre exterior)
     return g;
   }, [w]);
   const rotY = Math.atan2(out[0], out[1]);          // aliniază +Z local cu direcția spre exterior
-  const off = w / 2 - w * FLAG_BL - 0.02;           // vârfurile cozii ajung lipite de muchia exterioară
+  const off = w / 2 + 0.02;                         // muchia lată la piciorul feței exterioare, coada iese pe pământ
   const px = out[0] * off, pz = out[1] * off;
   return (
-    <mesh geometry={geo} position={[px, H / 2 + 0.008, pz]} rotation={[0, rotY, 0]} castShadow receiveShadow>
+    <mesh geometry={geo} position={[px, FLAG_Y, pz]} rotation={[0, rotY, 0]} castShadow receiveShadow>
       <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.14} roughness={0.55} metalness={0.05} side={THREE.DoubleSide} />
     </mesh>
   );
