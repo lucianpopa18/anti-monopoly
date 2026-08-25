@@ -105,31 +105,28 @@ function Tile({ i, game }) {
   );
 }
 
-// Steag CULCAT pe sol (fără băț), întins în fața căsuței (spre exterior), în
-// culoarea proprietarului; pânza unduiește ca și cum flutură pe jos.
+// Fanion CULCAT pe sol la muchia EXTERIOARĂ a căsuței deținute, întins spre
+// marginea tablei, cu capătul tăiat în „coadă de rândunică" (V). Culoarea =
+// culoarea PIONULUI care deține proprietatea.
 function Flag({ color, out, w }) {
-  const mesh = useRef();
   const geo = useMemo(() => {
-    const g = new THREE.PlaneGeometry(0.52, 0.32, 12, 1);
-    g.rotateX(-Math.PI / 2);   // culcat pe sol (normal în sus)
-    g.translate(0, 0, -0.16);  // se întinde de la muchia exterioară spre interiorul căsuței
+    const BW = w * 0.8, BL = w * 0.46, NOTCH = w * 0.16; // lățime / lungime spre exterior / adâncime coadă
+    const s = new THREE.Shape();
+    s.moveTo(-BW / 2, 0);          // muchie prinsă (la căsuță)
+    s.lineTo(BW / 2, 0);
+    s.lineTo(BW / 2, BL);          // colț exterior dreapta
+    s.lineTo(0, BL - NOTCH);       // crestătura din mijloc (coadă de rândunică)
+    s.lineTo(-BW / 2, BL);         // colț exterior stânga
+    s.closePath();
+    const g = new THREE.ShapeGeometry(s);
+    g.rotateX(Math.PI / 2);        // planul formei (XY) → culcat pe sol (XZ); +Y formă → +Z local (spre exterior)
     return g;
-  }, []);
-  useFrame(({ clock }) => {
-    const g = mesh.current?.geometry; if (!g) return;
-    const t = clock.elapsedTime, p = g.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const z = p.getZ(i);                         // -0.32..0 (0 = muchia liberă, spre exterior)
-      const fade = 1 + z / 0.32;                   // unduire mai mare spre muchia liberă
-      p.setY(i, 0.03 + Math.sin(z * 11 + t * 4.5) * 0.03 * fade);
-    }
-    p.needsUpdate = true;
-  });
-  const rotY = Math.atan2(out[0], out[1]);
-  const px = out[0] * (w / 2 - 0.03), pz = out[1] * (w / 2 - 0.03);
+  }, [w]);
+  const rotY = Math.atan2(out[0], out[1]);          // aliniază +Z local cu direcția spre exterior
+  const px = out[0] * (w / 2 - 0.05), pz = out[1] * (w / 2 - 0.05); // pornește de sub muchia căsuței
   return (
-    <mesh ref={mesh} geometry={geo} position={[px, H / 2 + 0.01, pz]} rotation={[0, rotY, 0]} castShadow>
-      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.22} roughness={0.6} side={THREE.DoubleSide} />
+    <mesh geometry={geo} position={[px, H / 2 + 0.008, pz]} rotation={[0, rotY, 0]} castShadow receiveShadow>
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.14} roughness={0.55} metalness={0.05} side={THREE.DoubleSide} />
     </mesh>
   );
 }
