@@ -228,18 +228,20 @@ button:active { transform: scale(0.97); }
 }
 
 /* ===== Flip 3D al cartonașului (zboară din pachet + se întoarce) ===== */
-.flipScene { width: 100%; max-width: 330px; perspective: 1300px; }
+.flipScene { width: 100%; max-width: 330px; perspective: 1300px; animation: sceneFade 0.22s ease both; }
 .flipCard {
   position: relative; width: 100%; transform-style: preserve-3d;
   transform-origin: 50% 60%;
   animation: cardFlipIn 1.15s cubic-bezier(0.34, 1.4, 0.5, 1) both;
-  filter: drop-shadow(0 26px 60px rgba(0,0,0,0.55));
 }
+/* NB: fără filter/opacity permanent pe .flipCard — ar aplatiza preserve-3d
+   (backface-visibility n-ar mai ascunde spatele pe iOS). Umbra stă pe fețe. */
 /* fața (conținutul) definește dimensiunea; e „întoarsă" ca s-o vezi la final */
 .flipFront {
   position: relative; transform: rotateY(180deg);
   backface-visibility: hidden; -webkit-backface-visibility: hidden;
-  animation: none; box-shadow: none;
+  animation: none;
+  box-shadow: 0 26px 60px rgba(0,0,0,0.55);
 }
 .flipFront::after { transform: scaleX(-1); left: 0; right: auto; border-top-right-radius: 0; border-top-left-radius: 16px;
   background: linear-gradient(135deg, rgba(0,0,0,0.10) 0 50%, transparent 50%); }
@@ -247,19 +249,24 @@ button:active { transform: scale(0.97); }
 .flipBack {
   position: absolute; inset: 0; border-radius: 16px;
   background: #FBF7EE; border: 3px solid var(--accent);
+  transform: rotateY(0deg);
   backface-visibility: hidden; -webkit-backface-visibility: hidden;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-  box-shadow: inset 0 0 0 6px rgba(255,255,255,0.6), inset 0 0 0 8px var(--accent);
+  box-shadow: inset 0 0 0 6px rgba(255,255,255,0.6), inset 0 0 0 8px var(--accent), 0 26px 60px rgba(0,0,0,0.55);
 }
 .flipBackLogo { font-size: 3.4rem; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.2)); }
 .flipBackLabel { font-size: 1.35rem; font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
 .flipBackSub { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.28em; color: #b8b0a0; }
 
+@keyframes sceneFade { from { opacity: 0; } to { opacity: 1; } }
+/* NB: fără `opacity` în keyframe-urile de mai jos — animarea opacity pe elementul
+   cu preserve-3d îl compozitează separat și APLATIZEAZĂ 3D-ul (backface-visibility
+   nu mai ascunde spatele → cartea rămâne pe spate oglindit). Fade-ul stă pe .flipScene. */
 @keyframes cardFlipIn {
-  0%   { transform: translateY(130px) scale(0.32) rotateY(0deg);   opacity: 0; }
-  22%  { transform: translateY(0) scale(1.0) rotateY(0deg);        opacity: 1; }
-  38%  { transform: translateY(-8px) scale(1.05) rotateY(0deg);    opacity: 1; }
-  100% { transform: translateY(0) scale(1) rotateY(180deg);        opacity: 1; }
+  0%   { transform: translateY(130px) scale(0.32) rotateY(0deg); }
+  22%  { transform: translateY(0) scale(1.0) rotateY(0deg); }
+  38%  { transform: translateY(-8px) scale(1.05) rotateY(0deg); }
+  100% { transform: translateY(0) scale(1) rotateY(180deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
