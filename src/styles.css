@@ -286,7 +286,7 @@ button:active { transform: scale(0.97); }
 .deedHead { padding: 12px 14px; text-align: center; border-bottom: 3px solid #17130c; }
 .deedKind { font-size: 0.7rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.9; }
 .deedName { font-size: 1.35rem; font-weight: 900; line-height: 1.1; margin-top: 2px; }
-.deedBody { padding: 12px 15px 14px; overflow-y: auto; }
+.deedBody { padding: 12px 15px 14px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .deedRow2 { display: flex; align-items: center; justify-content: space-between; font-size: 0.98rem; padding: 3px 0; }
 .deedRow2 span { font-weight: 700; }
 .deedRow2 b { font-weight: 900; }
@@ -301,8 +301,34 @@ button:active { transform: scale(0.97); }
 .deedFeeRow { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-top: 1px solid #E7DFCE; font-size: 0.98rem; font-weight: 700; }
 .deedFeeRow b { font-weight: 900; }
 .deedNote { margin-top: 10px; font-size: 0.76rem; color: #6b6355; line-height: 1.4; text-align: center; }
-.deedActions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+/* footer în afara zonei cu scroll → butoanele rămân mereu vizibile */
+.deedActions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 0 0 auto;
+  padding: 10px 15px; border-top: 2px solid #E7DFCE; background: #FBF7EE; }
 .deedActions .btn { min-height: 46px; }
+
+/* ===== LANDSCAPE pe telefon (înălțime mică): popup-urile încap fără scroll ===== */
+@media (orientation: landscape) and (max-height: 560px) {
+  .cardPopupBackdrop { padding: 10px; }
+  .deed { max-height: 96vh; max-width: 440px; }
+  .deedHead { padding: 6px 12px; }
+  .deedName { font-size: 1.05rem; }
+  .deedKind { font-size: 0.6rem; }
+  .deedBody { padding: 7px 14px 8px; }
+  .deedRow2 { font-size: 0.85rem; padding: 1px 0; }
+  .deedBigIcon { font-size: 2rem; margin: 2px 0 4px; }
+  .deedRentsTitle { font-size: 0.9rem; margin: 5px 0 2px; }
+  .deedRentHead { font-size: 0.66rem; }
+  .deedRentRow { font-size: 0.8rem; padding: 1.5px 0; }
+  .deedRentRow .ll { font-size: 0.74rem; }
+  .deedFeeRow { font-size: 0.85rem; padding: 2px 0; }
+  .deedNote { margin-top: 5px; font-size: 0.68rem; line-height: 1.25; }
+  .deedActions { padding: 7px 14px; }
+  .deedActions .btn { min-height: 38px; }
+  /* modale generice (licitație/schimb/construiește/gestionează) */
+  .modalHolder, .modalHolder .panel { max-height: 96vh; max-width: 480px; }
+  .cardPopup { padding: 12px 16px 12px; max-width: 440px; }
+}
+
 .debtBanner { animation: slideIn 0.28s ease; }
 @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 

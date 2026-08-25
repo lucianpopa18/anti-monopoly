@@ -492,10 +492,11 @@ function PropertyPopup({ info, canBuy, onBuy, onRefuse }) {
               <div className="deedNote">Cu cât deții mai multe, cu atât chiria crește.</div>
             </>
           )}
-          <div className="deedActions">
-            <button className="btn" onClick={onBuy} disabled={!canBuy}>Cumpără · €{info.price}</button>
-            <button className="btn ghost" onClick={onRefuse}>Refuz</button>
-          </div>
+        </div>
+        {/* butoane în afara zonei cu scroll → mereu vizibile (inclusiv landscape) */}
+        <div className="deedActions">
+          <button className="btn" onClick={onBuy} disabled={!canBuy}>Cumpără · €{info.price}</button>
+          <button className="btn ghost" onClick={onRefuse}>Refuz</button>
         </div>
       </div>
     </div>
