@@ -412,7 +412,8 @@ function Lobby({ game, setGame, net, myId, onLeave }) {
 }
 
 /* ---------------- TABLA + JOCUL ---------------- */
-// Pop-up cu cartonașul tras: card alb de joc, cu eticheta rolului și textul.
+// Pop-up cu cartonașul tras: cartea zboară din pachet cu SPATELE spre tine
+// (numele rolului), apoi se ÎNTOARCE 3D revelând textul — flip ca la o carte reală.
 function CardPopup({ card, onClose }) {
   const isComp = card.role === 'competitor';
   const accent = isComp ? '#2E9E5B' : '#2E5BD8';
@@ -420,15 +421,26 @@ function CardPopup({ card, onClose }) {
   const m = card.money;
   return (
     <div className="cardPopupBackdrop" onClick={onClose}>
-      <div className="cardPopup" onClick={(e) => e.stopPropagation()}>
-        <div className="cardPopupTag" style={{ color: accent, borderColor: accent }}>{label}</div>
-        <p className="cardPopupText">{card.text}</p>
-        {m != null && m !== 0 && (
-          <div className="cardPopupAmount" style={{ color: m > 0 ? '#1E9E4E' : '#D23B3B' }}>
-            {m > 0 ? '+' : '−'}€{Math.abs(m)}
+      <div className="flipScene" onClick={(e) => e.stopPropagation()}>
+        <div className="flipCard">
+          {/* SPATELE — cum arată cartea în pachet */}
+          <div className="flipBack" style={{ '--accent': accent }}>
+            <div className="flipBackLogo">🃏</div>
+            <div className="flipBackLabel">{label}</div>
+            <div className="flipBackSub">ANTI-MONOPOLY</div>
           </div>
-        )}
-        <button className="btn cardPopupBtn" onClick={onClose}>OK</button>
+          {/* FAȚA — conținutul */}
+          <div className="cardPopup flipFront">
+            <div className="cardPopupTag" style={{ color: accent, borderColor: accent }}>{label}</div>
+            <p className="cardPopupText">{card.text}</p>
+            {m != null && m !== 0 && (
+              <div className="cardPopupAmount" style={{ color: m > 0 ? '#1E9E4E' : '#D23B3B' }}>
+                {m > 0 ? '+' : '−'}€{Math.abs(m)}
+              </div>
+            )}
+            <button className="btn cardPopupBtn" onClick={onClose}>OK</button>
+          </div>
+        </div>
       </div>
     </div>
   );
