@@ -216,7 +216,7 @@ function resolveLanding(s, p, dice) {
 
   if (idx === START) { p.money += LAND_START; log(s, `${p.name} aterizează pe START (+€${LAND_START}).`); event(s, { kind: 'start', who: p.name, amount: LAND_START }); return; }
   if (sq.type === 'corner') {
-    if (sq.kind === 'gotojail') { sendToJail(s, p); log(s, `${p.name} → Consiliul Concurenței: la închisoare!`); event(s, { kind: 'jail', who: p.name, reason: 'gotojail' }); return; }
+    if (sq.kind === 'gotojail') { s.pending = { type: 'cardmove', effect: { kind: 'jail', auto: true, reason: 'gotojail' } }; return; } // pionul rămâne pe căsuță; saltul la închisoare se face DUPĂ ce a hopăit aici (auto)
     if (sq.kind === 'fundatia') { resolveFundatia(s, p, dice[0]); return; }
     return; // jail (vizită) / restul
   }
@@ -314,7 +314,7 @@ export function applyCardMove(state, playerId) {
   if (eff.kind === 'jail') {
     sendToJail(s, p);
     log(s, `${p.name} → Consiliul Concurenței: la închisoare!`);
-    event(s, { kind: 'jail', who: p.name, reason: 'card' });
+    event(s, { kind: 'jail', who: p.name, reason: eff.reason || 'card' });
   } else if (eff.kind === 'moveTo') {
     if (eff.to === START) { p.pos = START; p.money += LAND_START; log(s, `${p.name} → START (+€${LAND_START}).`); }
     else { if (eff.to < p.pos) { p.money += PASS_START; } p.pos = eff.to; }

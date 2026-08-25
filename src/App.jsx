@@ -645,7 +645,16 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
       // teleport = durata săriturii (JUMP_DUR ~0.85s) + tampon; mers = nr. căsuțe / viteză
       const delay = teleport ? 1150 : tiles === 0 ? 250 : Math.round((tiles / PAWN_STEP_SPEED) * 1000) + 350;
       clearTimeout(revealTimer.current);
-      revealTimer.current = setTimeout(() => setReveal(true), delay);
+      revealTimer.current = setTimeout(() => {
+        // gotojail de pe căsuță: după ce pionul a hopăit pe căsuța „La Închisoare",
+        // sare AUTOMAT la închisoare (fără carte/buton). Doar jucătorul de pe rând declanșează.
+        const pend = game.pending;
+        if (pend?.type === 'cardmove' && pend.effect?.auto && (!online || isMyTurn)) {
+          dispatch('applyCardMove', me.id);
+        } else {
+          setReveal(true);
+        }
+      }, delay);
     }
     const cur = {}; game.players.forEach(p => { cur[p.id] = p.pos; });
     lastPosRef.current = cur;

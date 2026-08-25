@@ -227,6 +227,22 @@ test('pici pe căsuța 10 din zar = doar vizită (NU rămâi la închisoare)', (
   assert.equal(g.players[0].inJail, false); // e vacanță, nu închisoare
 });
 
+test('pici pe căsuța Consiliul Concurenței (30) → salt AMÂNAT la închisoare (hopăie întâi acolo)', () => {
+  let g = twoPlayerGame();
+  const pid = g.players[0].id;
+  g.players[0].pos = 24;
+  g = applyRoll(g, [2, 4]); // 24 → 30 (gotojail)
+  assert.equal(g.players[0].pos, 30);          // a ajuns pe căsuță (hopăie acolo), NU direct la închisoare
+  assert.equal(g.players[0].inJail, false);    // încă NU e la închisoare
+  assert.equal(g.pending?.type, 'cardmove');
+  assert.equal(g.pending.effect.kind, 'jail');
+  assert.equal(g.pending.effect.auto, true);
+  g = applyCardMove(g, pid);                    // saltul (declanșat automat de UI după hopăit)
+  assert.equal(g.players[0].pos, 10);           // abia acum la închisoare
+  assert.equal(g.players[0].inJail, true);
+  assert.equal(g.pending, null);
+});
+
 test('plătește €50 și iese din închisoare (înainte de aruncare)', () => {
   let g = twoPlayerGame();
   const pid = g.players[0].id;
