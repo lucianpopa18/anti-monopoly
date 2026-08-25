@@ -139,6 +139,22 @@ test('chirie: al doilea jucător plătește proprietarului', () => {
   assert.equal(g.players.find(x => x.id === d.id).money, START_MONEY - BOARD[1].price + rent);
 });
 
+test('chirie pe proprietate IPOTECATĂ: plătești €0 + eveniment „mortgaged"', () => {
+  let g = twoPlayerGame();
+  const [d, b] = g.players;
+  // Dudu cumpără idx 1 și o ipotechează
+  g = applyRoll(g, [1, 0]); g = applyBuy(g);
+  g = applyMortgage(g, 1);
+  g = applyEndTurn(g);
+  assert.equal(g.turn, b.id);
+  // Bubu ajunge pe idx 1 (ipotecată) → nu plătește chirie
+  g = applyRoll(g, [1, 0]);
+  assert.equal(g.players.find(x => x.id === b.id).money, START_MONEY); // neschimbat
+  assert.equal(g.lastEvent.kind, 'rent');
+  assert.equal(g.lastEvent.amount, 0);
+  assert.equal(g.lastEvent.mortgaged, true);
+});
+
 test('aterizare fix pe START dă €200 (nu €100)', () => {
   let g = twoPlayerGame();
   const p = currentPlayer(g);

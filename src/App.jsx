@@ -530,7 +530,14 @@ function EventPopup({ ev, onClose }) {
     );
   }
 
-  if (ev.kind === 'rent') {
+  if (ev.kind === 'rent' && ev.mortgaged) {
+    const info = cardInfo(ev.idx);
+    icon = '🏚️';
+    headColor = '#8A6D3B'; headText = '#fff';
+    title = info?.name || 'Proprietate ipotecată';
+    sub = `Proprietatea lui ${ev.owner} este ipotecată, așa că plătești`;
+    amount = '€0'; amountColor = '#8A6D3B';
+  } else if (ev.kind === 'rent') {
     const info = cardInfo(ev.idx);
     icon = info?.type === 'property' ? '🏠' : (info?.icon || '💸');
     headColor = info?.color || '#C0392B';
@@ -612,12 +619,14 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
       rollSeqRef2.current = seq;
       const mover = currentPlayer(game);
       const from = mover ? lastPosRef.current[mover.id] : undefined;
-      let tiles = 0;
-      if (mover && typeof from === 'number') {
+      let tiles = 0, teleport = false;
+      if (mover && typeof from === 'number' && mover.pos !== from) {
         const fwd = (mover.pos - from + 40) % 40;
-        tiles = (fwd >= 1 && fwd <= 12) ? fwd : 0; // >12 sau înapoi = teleport (instant)
+        if (fwd >= 1 && fwd <= 12) tiles = fwd;
+        else teleport = true; // >12 sau înapoi (jail/start/carte) = săritură prin aer
       }
-      const delay = tiles === 0 ? 250 : Math.round((tiles / PAWN_STEP_SPEED) * 1000) + 350;
+      // teleport = durata săriturii (JUMP_DUR ~0.85s) + tampon; mers = nr. căsuțe / viteză
+      const delay = teleport ? 1150 : tiles === 0 ? 250 : Math.round((tiles / PAWN_STEP_SPEED) * 1000) + 350;
       clearTimeout(revealTimer.current);
       revealTimer.current = setTimeout(() => setReveal(true), delay);
     }
@@ -641,7 +650,7 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
       juiceRef.current.ev = ev.seq;
       if (ev.kind === 'monopoly') { setCelebrate(k => k + 1); setCoinKey(k => k + 1); haptic('heavy'); sfx.win(); }
       else if (ev.kind === 'start' || (ev.kind === 'fundatia' && ev.amount > 0)) { setCoinKey(k => k + 1); haptic('light'); }
-      else if (ev.kind === 'rent' || ev.kind === 'tax') { setShaking(true); haptic('heavy'); }
+      else if ((ev.kind === 'rent' && !ev.mortgaged) || ev.kind === 'tax') { setShaking(true); haptic('heavy'); }
       else if (ev.kind === 'jail' || (ev.kind === 'fundatia' && ev.amount < 0)) { setShaking(true); haptic('medium'); }
     }
     const c = game.lastCard;
@@ -811,7 +820,9 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
           <div className="offlineBanner"><b>📵 Gazda s-a deconectat.</b> Așteptăm să revină… (jocul continuă când gazda se reconectează)</div>
         )}
 
-        {debt && (
+        {/* Datoria e mereu a jucătorului de pe rând. ONLINE: doar el vede butoanele
+            (ceilalți văd doar un mesaj informativ — nu pot decide în locul lui). */}
+        {debt && (!online || isMyTurn) && (
           <div className="debtBanner">
             <b>💸 {me.name} datorează €{debt.amount}.</b> Fă rost de bani (ipotecă / vinde case) sau declară faliment.
             <button className="btn" style={{ width: '100%', marginTop: 8 }} onClick={() => setManageOpen(true)}>🏦 Gestionează</button>
@@ -819,6 +830,11 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
               <button className="btn ghost" style={{ width: '100%', marginTop: 6, color: 'var(--tax)', borderColor: 'var(--tax)' }}
                 onClick={() => dispatch('applyDeclareBankrupt')}>💥 Declar faliment</button>
             )}
+          </div>
+        )}
+        {debt && online && !isMyTurn && (
+          <div className="debtBanner">
+            <b>💸 {me.name} datorează €{debt.amount}.</b> Așteptăm ca {me.name} să facă rost de bani sau să declare faliment…
           </div>
         )}
 

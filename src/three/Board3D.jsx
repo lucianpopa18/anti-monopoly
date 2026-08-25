@@ -137,44 +137,71 @@ function Flag({ color, out, w }) {
 const HOP = 0.5;         // înălțimea săriturii
 const STEP_SPEED = 7;    // căsuțe pe secundă
 
+const JUMP_H = 3.2;        // înălțimea săriturii de teleport (jail/start/carte)
+const JUMP_DUR = 0.85;     // durata săriturii de teleport (secunde)
+
 function Pawn({ player, offset, active, posRef, movingRef }) {
   const ref = useRef();
   // pos = poziție absolută „nedesfășurată" (float); end = ținta absolută
-  const anim = useRef({ pos: player.pos, end: player.pos, endTile: player.pos, jx: 0, jz: 0 });
+  // mode: 'walk' = pas cu pas înainte; 'jump' = teleport animat printr-un arc prin aer
+  const anim = useRef({ pos: player.pos, end: player.pos, endTile: player.pos, jx: 0, jz: 0,
+    mode: 'walk', jt: 1, jfrom: player.pos, jto: player.pos });
 
   // detectăm schimbarea de căsuță și construim traseul înainte
   if (player.pos !== anim.current.endTile) {
     const curTile = ((Math.round(anim.current.pos) % 40) + 40) % 40;
     const forward = (player.pos - curTile + 40) % 40;
     if (forward >= 1 && forward <= 12) {
+      anim.current.mode = 'walk';
       anim.current.end = Math.round(anim.current.pos) + forward; // pas cu pas înainte
     } else {
-      anim.current.pos = player.pos; anim.current.end = player.pos; // teleport (jail/carte) → direct
+      // teleport (închisoare / START / carte): în loc de salt sec, o săritură prin aer
+      // spre destinație — camera o urmărește (efect cinematic), apoi aterizează.
+      anim.current.mode = 'jump';
+      anim.current.jt = 0;
+      anim.current.jfrom = curTile;
+      anim.current.jto = player.pos;
+      anim.current.pos = player.pos; anim.current.end = player.pos; // poziția logică = destinația
     }
     anim.current.endTile = player.pos;
   }
 
   useFrame((_, delta) => {
     const a = anim.current;
-    if (a.pos < a.end) { a.pos = Math.min(a.end, a.pos + STEP_SPEED * delta); }
-    const tileA = Math.floor(a.pos), frac = a.pos - tileA;
-    const pa = pos3(((tileA % 40) + 40) % 40);
-    const pb = pos3((((tileA + 1) % 40) + 40) % 40);
-    const moving = a.pos < a.end;
-    // Pe colțul Închisoare (10), când e oprit: pionul stă pe jumătatea CORECTĂ —
-    // spre colțul exterior dacă e închis, spre interior (centru) dacă e în vacanță.
-    const settled = ((Math.round(a.pos) % 40) + 40) % 40;
-    let tjx = 0, tjz = 0;
-    if (!moving && settled === 10) {
-      const p10 = pos3(10), sx = Math.sign(p10.x) || 1, sz = Math.sign(p10.z) || 1;
-      const dir = player.inJail ? 1 : -1; // +1 = exterior (închisoare), -1 = interior (vacanță)
-      tjx = dir * sx * 0.42; tjz = dir * sz * 0.42;
+    let x, z, y, moving;
+
+    if (a.mode === 'jump' && a.jt < 1) {
+      // săritură de teleport: arc lin de la căsuța curentă la destinație
+      a.jt = Math.min(1, a.jt + delta / JUMP_DUR);
+      const t = a.jt, ease = t * t * (3 - 2 * t); // smoothstep
+      const pa = pos3(a.jfrom), pb = pos3(a.jto);
+      x = pa.x + (pb.x - pa.x) * ease + offset[0];
+      z = pa.z + (pb.z - pa.z) * ease + offset[1];
+      y = H / 2 + Math.sin(t * Math.PI) * JUMP_H;
+      a.jx = 0; a.jz = 0;
+      moving = true;
+    } else {
+      if (a.pos < a.end) { a.pos = Math.min(a.end, a.pos + STEP_SPEED * delta); }
+      const tileA = Math.floor(a.pos), frac = a.pos - tileA;
+      const pa = pos3(((tileA % 40) + 40) % 40);
+      const pb = pos3((((tileA + 1) % 40) + 40) % 40);
+      moving = a.pos < a.end;
+      // Pe colțul Închisoare (10), când e oprit: pionul stă pe jumătatea CORECTĂ —
+      // spre colțul exterior dacă e închis, spre interior (centru) dacă e în vacanță.
+      const settled = ((Math.round(a.pos) % 40) + 40) % 40;
+      let tjx = 0, tjz = 0;
+      if (!moving && settled === 10) {
+        const p10 = pos3(10), sx = Math.sign(p10.x) || 1, sz = Math.sign(p10.z) || 1;
+        const dir = player.inJail ? 1 : -1; // +1 = exterior (închisoare), -1 = interior (vacanță)
+        tjx = dir * sx * 0.42; tjz = dir * sz * 0.42;
+      }
+      const k = Math.min(1, delta * 8); // tranziție lină spre jumătatea corectă
+      a.jx += (tjx - a.jx) * k; a.jz += (tjz - a.jz) * k;
+      x = pa.x + (pb.x - pa.x) * frac + offset[0] + a.jx;
+      z = pa.z + (pb.z - pa.z) * frac + offset[1] + a.jz;
+      y = H / 2 + (moving ? Math.sin(frac * Math.PI) * HOP : 0);
     }
-    const k = Math.min(1, delta * 8); // tranziție lină spre jumătatea corectă
-    a.jx += (tjx - a.jx) * k; a.jz += (tjz - a.jz) * k;
-    const x = pa.x + (pb.x - pa.x) * frac + offset[0] + a.jx;
-    const z = pa.z + (pb.z - pa.z) * frac + offset[1] + a.jz;
-    const y = H / 2 + (moving ? Math.sin(frac * Math.PI) * HOP : 0);
+
     if (ref.current) ref.current.position.set(x, y, z);
     if (active && posRef) posRef.current.set(x, y, z);
     if (active && movingRef) movingRef.current = moving;

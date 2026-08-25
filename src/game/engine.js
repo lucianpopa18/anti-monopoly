@@ -233,6 +233,11 @@ function resolveLanding(s, p, dice) {
       return;
     }
     if (owner.id === p.id) return; // a lui
+    if (s.mortgaged?.[idx]) {
+      log(s, `${p.name} pică pe ${sq.name} (ipotecată) — nu plătește chirie.`);
+      event(s, { kind: 'rent', who: p.name, owner: owner.name, amount: 0, idx, mortgaged: true });
+      return;
+    }
     const rent = computeRent(s, idx, steps);
     p.money -= rent; owner.money += rent;
     log(s, `${p.name} plătește €${rent} chirie lui ${owner.name} (${sq.name}).`);
@@ -284,6 +289,11 @@ function resolveLandingAfterCard(s, p) {
     const owner = ownerOf(s, p.pos);
     if (!owner) { if (p.money >= sq.price) s.pending = { type: 'buy', idx: p.pos }; return; }
     if (owner.id === p.id) return;
+    if (s.mortgaged?.[p.pos]) {
+      log(s, `${p.name} pică pe ${sq.name} (ipotecată) — nu plătește chirie.`);
+      event(s, { kind: 'rent', who: p.name, owner: owner.name, amount: 0, idx: p.pos, mortgaged: true });
+      return;
+    }
     const rent = computeRent(s, p.pos, 7);
     p.money -= rent; owner.money += rent;
     log(s, `${p.name} plătește €${rent} chirie lui ${owner.name} (${sq.name}).`);
