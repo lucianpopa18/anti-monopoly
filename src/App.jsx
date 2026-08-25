@@ -10,7 +10,7 @@ import {
   applyBuild, buildableFor, houseCost,
   canMortgage, applyMortgage, applyUnmortgage, applySellHouse,
   mustBankrupt, applyDeclareBankrupt, proposeTrade, applyAcceptTrade, applyDeclineTrade,
-  applyBid, applyPassAuction, randomCode, playerAssets, ownsWholeGroup, applyPayJail,
+  applyBid, applyPassAuction, randomCode, playerAssets, ownsWholeGroup, applyPayJail, applyCardMove,
 } from './game/engine.js';
 import { Room, newId } from './net/room.js';
 
@@ -35,7 +35,7 @@ class ErrorBoundary extends Component {
 const ENGINE = {
   startGame, applyBuy, applyDeclineBuy, applyEndTurn, applyBuild,
   applyBid, applyPassAuction, applyAcceptTrade, applyDeclineTrade, applyMortgage,
-  applyUnmortgage, applySellHouse, proposeTrade, applyDeclareBankrupt, applyPayJail,
+  applyUnmortgage, applySellHouse, proposeTrade, applyDeclareBankrupt, applyPayJail, applyCardMove,
 };
 
 // Vibrație scurtă pe telefon (best-effort; iOS Safari o ignoră, dar nu strică).
@@ -414,13 +414,17 @@ function Lobby({ game, setGame, net, myId, onLeave }) {
 /* ---------------- TABLA + JOCUL ---------------- */
 // Pop-up cu cartonașul tras: cartea zboară din pachet cu SPATELE spre tine
 // (numele rolului), apoi se ÎNTOARCE 3D revelând textul — flip ca la o carte reală.
-function CardPopup({ card, onClose }) {
+function CardPopup({ card, onClose, onContinue, canAct }) {
   const isComp = card.role === 'competitor';
   const accent = isComp ? '#2E9E5B' : '#2E5BD8';
   const label = isComp ? 'Competitor' : 'Monopolist';
   const m = card.money;
+  const isMove = !!card.move;
+  // Card „de mutare": pionul se mișcă ABIA după ce apeși „Continuă →". Cel care decide
+  // poate închide/continua; ceilalți (online) doar așteaptă (pop-up-ul se închide singur).
+  const dismiss = isMove ? (canAct ? onContinue : undefined) : onClose;
   return (
-    <div className="cardPopupBackdrop" onClick={onClose}>
+    <div className="cardPopupBackdrop" onClick={dismiss}>
       <div className="flipScene" onClick={(e) => e.stopPropagation()}>
         <div className="flipCard">
           {/* SPATELE — cum arată cartea în pachet */}
@@ -438,7 +442,13 @@ function CardPopup({ card, onClose }) {
                 {m > 0 ? '+' : '−'}€{Math.abs(m)}
               </div>
             )}
-            <button className="btn cardPopupBtn" onClick={onClose}>OK</button>
+            {isMove ? (
+              canAct
+                ? <button className="btn cardPopupBtn" onClick={onContinue}>Continuă →</button>
+                : <div className="cardPopupWait">🎲 Se mută…</div>
+            ) : (
+              <button className="btn cardPopupBtn" onClick={onClose}>OK</button>
+            )}
           </div>
         </div>
       </div>
@@ -594,6 +604,12 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
     if (game.lastCard && game.lastCard.seq) setCardPopup(game.lastCard);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.lastCard?.seq]);
+  // Cartonaș „de mutare": pe ecranele care nu decid (online, alt jucător), pop-up-ul se
+  // închide singur când mutarea s-a aplicat (pending cardmove curățat).
+  useEffect(() => {
+    if (cardPopup?.move && game.pending?.type !== 'cardmove') setCardPopup(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.pending?.type, game.rollSeq]);
   // Pop-up pentru evenimente (chirie / taxă / START / închisoare / fundație).
   const [eventPopup, setEventPopup] = useState(null);
   useEffect(() => {
@@ -617,6 +633,7 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
     const seq = game.rollSeq || 0;
     if (seq !== rollSeqRef2.current) {
       rollSeqRef2.current = seq;
+      setReveal(false); // ascunde pop-up-urile cât timp pionul se mișcă (mers SAU săritură de card)
       const mover = currentPlayer(game);
       const from = mover ? lastPosRef.current[mover.id] : undefined;
       let tiles = 0, teleport = false;
@@ -740,6 +757,8 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
     setTimeout(() => { setGame(g => applyRoll(g, d)); setRolling(false); }, 2300);
   };
   const payJail = () => { sfx.pay(); haptic('light'); dispatch('applyPayJail', me.id); };
+  // „Continuă →" pe un cartonaș de mutare: închide pop-up-ul, apoi pionul se mișcă.
+  const continueCard = () => { blockReveal(); setCardPopup(null); dispatch('applyCardMove', me.id); };
   const buy = () => { sfx.pay(); dispatch('applyBuy'); };
   const decline = () => dispatch('applyDeclineBuy');
   const endTurn = () => { setBuildOpen(false); setManageOpen(false); dispatch('applyEndTurn'); };
@@ -803,7 +822,10 @@ function Table({ game, setGame, net, myId, conn, onLeave }) {
           </div>
         )}
 
-        {reveal && cardPopup && <CardPopup card={cardPopup} onClose={() => setCardPopup(null)} />}
+        {reveal && cardPopup && (
+          <CardPopup card={cardPopup} onClose={() => setCardPopup(null)}
+            onContinue={continueCard} canAct={!online || isMyTurn} />
+        )}
         {reveal && !cardPopup && eventPopup && <EventPopup ev={eventPopup} onClose={() => setEventPopup(null)} />}
 
         {/* ONLINE: jucător deconectat care blochează jocul → gazda poate sări peste */}
@@ -1013,8 +1035,8 @@ function TradePanel({ game, dispatch, trade, online, myId }) {
         <>
           <p className="sub" style={{ margin: '8px 0' }}>Decide {online ? 'tu' : to.name}:</p>
           <div className="actions">
-            <button className="btn" onClick={() => dispatch('applyAcceptTrade')}>Accept</button>
-            <button className="btn ghost" onClick={() => dispatch('applyDeclineTrade')}>Refuz</button>
+            <button className="btn" onClick={() => dispatch('applyAcceptTrade', trade.toId)}>Accept</button>
+            <button className="btn ghost" onClick={() => dispatch('applyDeclineTrade', trade.toId)}>Refuz</button>
           </div>
         </>
       ) : (

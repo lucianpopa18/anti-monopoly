@@ -223,7 +223,7 @@ function resolveLanding(s, p, dice) {
   if (sq.type === 'tax') {
     p.money -= sq.amount; log(s, `${p.name} plătește ${sq.name} (−€${sq.amount}).`); event(s, { kind: 'tax', who: p.name, name: sq.name, amount: sq.amount }); return;
   }
-  if (sq.type === 'card') { drawCard(s, p, false); return; }
+  if (sq.type === 'card') { drawCard(s, p); return; }
 
   // proprietăți / transport / utilități
   if (sq.type === 'property' || sq.type === 'transport' || sq.type === 'utility') {
@@ -246,11 +246,12 @@ function resolveLanding(s, p, dice) {
 }
 
 // ---------- CĂRȚI ----------
-function drawCard(s, p, fromMove) {
+function drawCard(s, p) {
   const deck = deckFor(p.role);
   const card = deck[Math.floor(Math.random() * deck.length)];
   s.cardSeq = (s.cardSeq || 0) + 1; // id unic per tragere → pop-up-ul știe când e o carte nouă
-  s.lastCard = { text: card.text, role: p.role, seq: s.cardSeq, money: (typeof card.money === 'number' ? card.money : null), who: p.name };
+  const moves = !!(card.jail || card.moveTo != null || card.moveBy != null);
+  s.lastCard = { text: card.text, role: p.role, seq: s.cardSeq, money: (typeof card.money === 'number' ? card.money : null), who: p.name, move: moves };
   log(s, `${p.name} ${p.role === 'competitor' ? '🟢' : '🔵'}: „${card.text}"`);
 
   if (typeof card.money === 'number') p.money += card.money;
@@ -260,16 +261,14 @@ function drawCard(s, p, fromMove) {
     }
   }
   if (card.getOutFree) p.getOutFree = (p.getOutFree || 0) + 1;
-  if (card.jail) { sendToJail(s, p); return; }
-  if (!fromMove && (card.moveTo != null || card.moveBy != null)) {
-    if (card.moveTo != null) {
-      if (card.moveTo === START) { p.pos = START; p.money += LAND_START; log(s, `${p.name} → START (+€${LAND_START}).`); }
-      else { if (card.moveTo < p.pos) { p.money += PASS_START; } p.pos = card.moveTo; }
-    } else {
-      moveSimple(s, p, card.moveBy);
-    }
-    resolveLandingAfterCard(s, p);
-  }
+
+  // Efectele care MUTĂ pionul (închisoare / mergi la / mergi înainte) NU se aplică
+  // acum — ar muta pionul înainte ca jucătorul să apuce să citească cartonașul.
+  // Le punem în `pending: cardmove`; mutarea se aplică prin `applyCardMove` ABIA
+  // când jucătorul închide pop-up-ul (butonul „Continuă →").
+  if (card.jail) { s.pending = { type: 'cardmove', effect: { kind: 'jail' } }; return; }
+  if (card.moveTo != null) { s.pending = { type: 'cardmove', effect: { kind: 'moveTo', to: card.moveTo } }; return; }
+  if (card.moveBy != null) { s.pending = { type: 'cardmove', effect: { kind: 'moveBy', by: card.moveBy } }; return; }
 }
 function moveSimple(s, p, steps) {
   const from = p.pos;
@@ -299,6 +298,33 @@ function resolveLandingAfterCard(s, p) {
     log(s, `${p.name} plătește €${rent} chirie lui ${owner.name} (${sq.name}).`);
     event(s, { kind: 'rent', who: p.name, owner: owner.name, amount: rent, idx: p.pos });
   }
+}
+
+// ---------- aplică mutarea unui cartonaș, DUPĂ ce jucătorul a închis pop-up-ul ----------
+// Declanșată de UI (butonul „Continuă →") sau, online, de gazdă la skip. Abia acum
+// pionul se mișcă (bump rollSeq = animație + reveal gate), apoi se rezolvă noua căsuță.
+export function applyCardMove(state, playerId) {
+  const s = clone(state);
+  if (s.pending?.type !== 'cardmove') return s;
+  const p = currentPlayer(s);
+  if (!p || p.id !== playerId) return s; // doar jucătorul de pe rând
+  const eff = s.pending.effect;
+  s.pending = null;
+  s.rollSeq = (s.rollSeq || 0) + 1; // pionul se mișcă acum (animație + pop-up-uri după mutare)
+  if (eff.kind === 'jail') {
+    sendToJail(s, p);
+    log(s, `${p.name} → Consiliul Concurenței: la închisoare!`);
+    event(s, { kind: 'jail', who: p.name, reason: 'card' });
+  } else if (eff.kind === 'moveTo') {
+    if (eff.to === START) { p.pos = START; p.money += LAND_START; log(s, `${p.name} → START (+€${LAND_START}).`); }
+    else { if (eff.to < p.pos) { p.money += PASS_START; } p.pos = eff.to; }
+    resolveLandingAfterCard(s, p);
+  } else if (eff.kind === 'moveBy') {
+    moveSimple(s, p, eff.by);
+    resolveLandingAfterCard(s, p);
+  }
+  checkDebt(s, p);
+  return s;
 }
 
 // Fundația Anti-Monopoly: Competitorul dă un zar (1→€25, 2→€50); Monopolistul plătește €160.
@@ -547,10 +573,11 @@ export function proposeTrade(state, { toId, giveProps = [], giveMoney = 0, getPr
   s.pending = { type: 'trade', fromId, toId, giveProps, giveMoney: Math.max(0, giveMoney), getProps, getMoney: Math.max(0, getMoney) };
   return s;
 }
-export function applyAcceptTrade(state) {
+export function applyAcceptTrade(state, playerId) {
   const s = clone(state);
   const t = s.pending;
   if (t?.type !== 'trade') return s;
+  if (playerId != null && playerId !== t.toId) return s; // doar destinatarul decide
   const from = s.players.find(p => p.id === t.fromId);
   const to = s.players.find(p => p.id === t.toId);
   if (!from || !to) { s.pending = null; return s; }
@@ -565,9 +592,12 @@ export function applyAcceptTrade(state) {
   t.getProps.forEach(i => maybeMonopolyEvent(s, from.id, i));
   return s;
 }
-export function applyDeclineTrade(state) {
+export function applyDeclineTrade(state, playerId) {
   const s = clone(state);
-  if (s.pending?.type === 'trade') { log(s, 'Schimb refuzat.'); s.pending = null; }
+  const t = s.pending;
+  if (t?.type !== 'trade') return s;
+  if (playerId != null && playerId !== t.toId) return s; // doar destinatarul decide
+  log(s, 'Schimb refuzat.'); s.pending = null;
   return s;
 }
 
@@ -637,7 +667,9 @@ export function applyForceEndTurn(state, playerId) {
   // licitație: jucătorul deconectat pasează (oriunde ar fi rândul)
   if (pend?.type === 'auction') return applyPassAuction(s, playerId);
   // schimb către el: refuză
-  if (pend?.type === 'trade' && pend.toId === playerId) return applyDeclineTrade(s);
+  if (pend?.type === 'trade' && pend.toId === playerId) return applyDeclineTrade(s, playerId);
+  // cartonaș de mutare neconfirmat (e mereu al jucătorului de pe rând): aplică-l automat
+  if (pend?.type === 'cardmove' && s.turn === playerId) return applyCardMove(s, playerId);
   // restul se aplică doar dacă E rândul lui
   if (s.turn !== playerId) return s;
   const p = currentPlayer(s);

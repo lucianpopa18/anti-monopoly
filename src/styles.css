@@ -219,6 +219,7 @@ button:active { transform: scale(0.97); }
 .cardPopupText { margin: 0; font-size: 1.18rem; line-height: 1.45; font-weight: 700; color: #1b1712; }
 .cardPopupAmount { margin-top: 12px; font-size: 2rem; font-weight: 900; letter-spacing: -0.01em; }
 .cardPopupBtn { width: 100%; margin-top: 18px; }
+.cardPopupWait { width: 100%; margin-top: 18px; text-align: center; font-weight: 800; color: #8a8378; }
 
 @keyframes cardBackdropFade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes cardDeal {

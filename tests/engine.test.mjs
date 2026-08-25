@@ -6,7 +6,7 @@ import {
   applyBuild, canBuild, houseCost, buildableFor,
   applyMortgage, applyUnmortgage, applySellHouse, mustBankrupt, applyDeclareBankrupt,
   proposeTrade, applyAcceptTrade, applyBid, applyPassAuction, playerAssets, applyForceEndTurn,
-  applyPayJail,
+  applyPayJail, applyCardMove,
 } from '../src/game/engine.js';
 import { BOARD } from '../src/game/board.js';
 
@@ -30,16 +30,38 @@ test('roluri echilibrate la adăugare', () => {
   assert.equal(g.players[1].role, 'monopolist'); // se echilibrează
 });
 
-test('cartea „mergi la START" dă €200 O SINGURĂ dată (nu €400)', () => {
+test('cartea „mergi la START" dă €200 O SINGURĂ dată (nu €400), după confirmare', () => {
   const g = twoPlayerGame();
   assert.equal(BOARD[7].type, 'card'); // poz. 7 = căsuță de carte
   const orig = Math.random;
   Math.random = () => 0.7; // COMPETITOR_CARDS[floor(0.7*12)=8] = „mergi la START" (moveTo:0)
   try {
-    const s = applyRoll(g, [3, 4]); // START(0) → poz.7 (carte)
+    let s = applyRoll(g, [3, 4]); // START(0) → poz.7 (carte)
+    assert.equal(s.pending?.type, 'cardmove');     // mutarea e AMÂNATĂ până la confirmare
+    assert.equal(currentPlayer(s).pos, 7);         // pionul e încă pe căsuța de carte
+    s = applyCardMove(s, currentPlayer(s).id);      // „Continuă →" aplică mutarea
     const p = currentPlayer(s);
-    assert.equal(p.pos, 0);                       // dus înapoi pe START
+    assert.equal(p.pos, 0);                          // dus înapoi pe START
     assert.equal(p.money, START_MONEY + LAND_START); // +200, NU +400
+  } finally {
+    Math.random = orig;
+  }
+});
+
+test('cartonaș de mutare: pionul NU se mișcă până la applyCardMove (efect vizibil după pop-up)', () => {
+  const g = twoPlayerGame();
+  const orig = Math.random;
+  // COMPETITOR_CARDS[9] = „Control neanunțat. Du-te la Închisoare." (jail) → floor(r*12)=9 → r∈[0.75,0.833)
+  Math.random = () => 0.78;
+  try {
+    let s = applyRoll(g, [3, 4]); // → poz.7 (carte)
+    assert.equal(s.pending?.type, 'cardmove');
+    assert.ok(!currentPlayer(s).inJail); // încă NU e la închisoare
+    assert.equal(currentPlayer(s).pos, 7);
+    s = applyCardMove(s, currentPlayer(s).id);
+    assert.equal(currentPlayer(s).inJail, true);      // abia acum ajunge la închisoare
+    assert.equal(currentPlayer(s).pos, 10);
+    assert.equal(s.lastEvent?.kind, 'jail');
   } finally {
     Math.random = orig;
   }
