@@ -105,25 +105,27 @@ function Tile({ i, game }) {
   );
 }
 
-// Fanion CULCAT pe sol la muchia EXTERIOARĂ a căsuței deținute, întins spre
-// marginea tablei, cu capătul tăiat în „coadă de rândunică" (V). Culoarea =
-// culoarea PIONULUI care deține proprietatea.
+// Fanion CULCAT pe blatul căsuței, în banda DE JOS (muchia exterioară), lat cât
+// toată proprietatea (colț-la-colț), cu marginea exterioară tăiată în „coadă de
+// rândunică" (V) lipită de muchia de jos. Culoarea = culoarea PIONULUI proprietar.
+const FLAG_BW = 0.98, FLAG_BL = 0.34, FLAG_NOTCH = 0.12; // lățime / adâncime bandă / adâncime coadă (× w)
 function Flag({ color, out, w }) {
   const geo = useMemo(() => {
-    const BW = w * 0.98, BL = w * 0.50, NOTCH = w * 0.15; // lățime / lungime spre exterior / adâncime coadă
+    const BW = w * FLAG_BW, BL = w * FLAG_BL, NOTCH = w * FLAG_NOTCH;
     const s = new THREE.Shape();
-    s.moveTo(-BW / 2, 0);          // muchie prinsă (la căsuță)
+    s.moveTo(-BW / 2, 0);          // muchie prinsă (spre interiorul căsuței)
     s.lineTo(BW / 2, 0);
-    s.lineTo(BW / 2, BL);          // colț exterior dreapta
+    s.lineTo(BW / 2, BL);          // colț exterior dreapta (la muchia de jos)
     s.lineTo(0, BL - NOTCH);       // crestătura din mijloc (coadă de rândunică)
-    s.lineTo(-BW / 2, BL);         // colț exterior stânga
+    s.lineTo(-BW / 2, BL);         // colț exterior stânga (la muchia de jos)
     s.closePath();
     const g = new THREE.ShapeGeometry(s);
-    g.rotateX(Math.PI / 2);        // planul formei (XY) → culcat pe sol (XZ); +Y formă → +Z local (spre exterior)
+    g.rotateX(Math.PI / 2);        // planul formei (XY) → culcat pe blat (XZ); +Y formă → +Z local (spre muchia de jos)
     return g;
   }, [w]);
   const rotY = Math.atan2(out[0], out[1]);          // aliniază +Z local cu direcția spre exterior
-  const px = out[0] * (w / 2 - 0.05), pz = out[1] * (w / 2 - 0.05); // pornește de sub muchia căsuței
+  const off = w / 2 - w * FLAG_BL - 0.02;           // vârfurile cozii ajung lipite de muchia exterioară
+  const px = out[0] * off, pz = out[1] * off;
   return (
     <mesh geometry={geo} position={[px, H / 2 + 0.008, pz]} rotation={[0, rotY, 0]} castShadow receiveShadow>
       <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.14} roughness={0.55} metalness={0.05} side={THREE.DoubleSide} />
