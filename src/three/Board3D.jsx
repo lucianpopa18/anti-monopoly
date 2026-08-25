@@ -110,7 +110,7 @@ function Tile({ i, game }) {
 // culoarea PIONULUI care deține proprietatea.
 function Flag({ color, out, w }) {
   const geo = useMemo(() => {
-    const BW = w * 0.8, BL = w * 0.46, NOTCH = w * 0.16; // lățime / lungime spre exterior / adâncime coadă
+    const BW = w * 0.98, BL = w * 0.50, NOTCH = w * 0.15; // lățime / lungime spre exterior / adâncime coadă
     const s = new THREE.Shape();
     s.moveTo(-BW / 2, 0);          // muchie prinsă (la căsuță)
     s.lineTo(BW / 2, 0);
