@@ -205,12 +205,6 @@ button:active { transform: scale(0.97); }
   transform-origin: 50% 100%;
   animation: cardDeal 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
-/* colț îndoit discret, ca o carte de joc reală */
-.cardPopup::after {
-  content: ''; position: absolute; top: 0; right: 0; width: 26px; height: 26px;
-  background: linear-gradient(225deg, rgba(0,0,0,0.10) 0 50%, transparent 50%);
-  border-top-right-radius: 16px;
-}
 .cardPopupTag {
   display: inline-block; font-size: 0.98rem; font-weight: 900; letter-spacing: 0.02em;
   border: 2px solid; border-radius: 999px; padding: 4px 16px; margin-bottom: 14px;
@@ -244,8 +238,6 @@ button:active { transform: scale(0.97); }
   animation: none;
   box-shadow: 0 26px 60px rgba(0,0,0,0.55);
 }
-.flipFront::after { transform: scaleX(-1); left: 0; right: auto; border-top-right-radius: 0; border-top-left-radius: 16px;
-  background: linear-gradient(135deg, rgba(0,0,0,0.10) 0 50%, transparent 50%); }
 /* spatele cărții — acoperă fața la început */
 .flipBack {
   position: absolute; inset: 0; border-radius: 16px;
