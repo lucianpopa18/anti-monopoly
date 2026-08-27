@@ -101,9 +101,6 @@ function Tile({ i, game }) {
 
       {/* marcaj proprietar — STEAG în culoarea pionului, în fața căsuței (spre exterior) */}
       {owner && <Flag color={owner.color} out={OUT} w={w} />}
-
-      {/* ORAȘUL VIU — clădire în culoarea proprietarului, răsare pe iarbă în afara tablei */}
-      {owner && <Building color={owner.color} houses={nBuild} out={OUT} w={w} />}
     </group>
   );
 }
@@ -134,74 +131,6 @@ function Flag({ color, out, w }) {
     <mesh geometry={geo} position={[px, FLAG_Y, pz]} rotation={[0, rotY, 0]} castShadow receiveShadow>
       <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.14} roughness={0.55} metalness={0.05} side={THREE.DoubleSide} />
     </mesh>
-  );
-}
-
-// ===== ORAȘUL VIU (Faza 1): clădiri cute low-poly care „ies din pământ" =====
-// Fiecare proprietate/transport/utilitate DEȚINUT răsare o clădire pe iarbă, în
-// afara căsuței, în culoarea PIONULUI proprietar. Case → clădirea crește pe verticală.
-// Totul derivă din starea jocului (ownership/buildings) → pe online merge automat.
-const GRASS_Y = -0.26;   // nivelul ierbii (identic cu <Ground/>)
-const easeOutBack = (t) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
-
-// textură fațadă: culoarea proprietarului + grilă de ferestre (unele „aprinse")
-function makeFacadeTexture(color) {
-  const c = document.createElement('canvas'); c.width = 64; c.height = 128;
-  const x = c.getContext('2d');
-  x.fillStyle = color; x.fillRect(0, 0, 64, 128);
-  for (let r = 0; r < 8; r++) for (let col = 0; col < 3; col++) {
-    x.fillStyle = Math.random() < 0.34 ? '#ffe08a' : 'rgba(20,26,40,0.85)';
-    x.fillRect(8 + col * 18, 10 + r * 15, 12, 9);
-  }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
-}
-
-function buildingHeight(houses) { return houses >= 5 ? 2.8 : 0.9 + houses * 0.5; }
-
-function Building({ color, houses, out, w }) {
-  const bh = buildingHeight(houses);
-  const bw = w * 0.74, bd = w * 0.6;
-  const off = w / 2 + 0.05 + bd / 2 + 0.5;   // pe iarbă, în afara ramei tablei
-  const rotY = Math.atan2(out[0], out[1]);   // +Z local → spre exterior
-  const tex = useMemo(() => makeFacadeTexture(color), [color]);
-  const mats = useMemo(() => {
-    const face = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 });
-    const plain = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
-    return [face, face, plain, plain, face, face]; // +x -x +y -y +z -z
-  }, [tex, color]);
-  const bodyGeo = useMemo(() => new THREE.BoxGeometry(bw, bh, bd), [bw, bh, bd]);
-
-  // animație: „crește din pământ" la apariție (scale.y 0→1 de la bază) + puls la case noi
-  const grp = useRef();
-  const anim = useRef({ t0: -1, from: 0, prevH: houses });
-  useFrame((state) => {
-    const g = grp.current; if (!g) return;
-    const a = anim.current, now = state.clock.elapsedTime;
-    if (a.t0 < 0) { a.t0 = now; a.from = 0; }                       // mount → răsare din pământ
-    else if (houses !== a.prevH) { a.t0 = now; a.from = 0.72; }     // case noi → puls de creștere
-    a.prevH = houses;
-    const p = Math.min(1, (now - a.t0) / 0.7);
-    g.scale.y = a.from + (1 - a.from) * easeOutBack(p);
-  });
-
-  return (
-    <group ref={grp} position={[out[0] * off, GRASS_Y, out[1] * off]} rotation={[0, rotY, 0]} scale={[1, 0.001, 1]}>
-      <mesh geometry={bodyGeo} material={mats} position={[0, bh / 2, 0]} castShadow receiveShadow />
-      <mesh position={[0, bh + 0.05, 0]} castShadow>
-        <boxGeometry args={[bw * 1.08, 0.13, bd * 1.08]} />
-        <meshStandardMaterial color="#2b2f38" roughness={0.7} />
-      </mesh>
-      <mesh position={[bw * 0.16, bh + 0.2, -bd * 0.12]} castShadow>
-        <boxGeometry args={[bw * 0.3, 0.2, bd * 0.3]} />
-        <meshStandardMaterial color="#3a3f49" />
-      </mesh>
-      {houses >= 5 && (
-        <mesh position={[0, bh * 0.6, bd / 2 + 0.04]}>
-          <boxGeometry args={[bw * 0.7, 0.26, 0.06]} />
-          <meshStandardMaterial color="#ffd23f" emissive="#ffb300" emissiveIntensity={0.5} />
-        </mesh>
-      )}
-    </group>
   );
 }
 
