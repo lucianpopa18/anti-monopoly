@@ -514,10 +514,24 @@ function makeGrassTexture() {
   const S = 256; const c = document.createElement('canvas'); c.width = c.height = S;
   const g = c.getContext('2d');
   g.fillStyle = '#3f8f45'; g.fillRect(0, 0, S, S);
+  // pete mari, blânde de nuanță (variație de teren, nu doar zgomot fin)
+  const patches = ['#468f3f', '#3a8248', '#4fa257'];
+  for (let i = 0; i < 26; i++) {
+    g.globalAlpha = 0.22; g.fillStyle = patches[(Math.random() * patches.length) | 0];
+    g.beginPath(); g.arc(Math.random() * S, Math.random() * S, 14 + Math.random() * 30, 0, Math.PI * 2); g.fill();
+  }
+  g.globalAlpha = 1;
+  // fire de iarbă (zgomot fin)
   const shades = ['#4aa153', '#357a3b', '#47963f', '#57ab5c', '#2f7135'];
-  for (let i = 0; i < 3200; i++) {
+  for (let i = 0; i < 3600; i++) {
     g.fillStyle = shades[(Math.random() * shades.length) | 0];
     g.fillRect(Math.random() * S, Math.random() * S, 1 + Math.random() * 2, 1 + Math.random() * 3);
+  }
+  // câteva floricele risipite (accente calde discrete)
+  const flowers = ['#F4D35E', '#F6F4E6', '#E8A0BF'];
+  for (let i = 0; i < 40; i++) {
+    g.fillStyle = flowers[(Math.random() * flowers.length) | 0];
+    g.beginPath(); g.arc(Math.random() * S, Math.random() * S, 1.2 + Math.random() * 1.3, 0, Math.PI * 2); g.fill();
   }
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(28, 28); return t;
 }
@@ -569,9 +583,58 @@ function Ground() {
   );
 }
 
+// ---------- COPĂCEI low-poly, DOAR în cele 4 colțuri exterioare (departe de tablă) ----------
+const FOLIAGE = ['#3E8E4B', '#4CA45A', '#367C40', '#5AB061'];
+function Tree({ x, z, s, kind, rot, tone }) {
+  const leaf = FOLIAGE[tone % FOLIAGE.length];
+  return (
+    <group position={[x, -0.26, z]} rotation={[0, rot, 0]} scale={s}>
+      <mesh position={[0, 0.5, 0]} castShadow>
+        <cylinderGeometry args={[0.16, 0.22, 1, 7]} />
+        <meshStandardMaterial color="#7A5230" roughness={0.9} />
+      </mesh>
+      {kind === 'pine' ? (
+        <>
+          <mesh position={[0, 1.5, 0]} castShadow><coneGeometry args={[0.95, 1.5, 8]} /><meshStandardMaterial color={leaf} roughness={0.8} /></mesh>
+          <mesh position={[0, 2.25, 0]} castShadow><coneGeometry args={[0.72, 1.25, 8]} /><meshStandardMaterial color={leaf} roughness={0.8} /></mesh>
+          <mesh position={[0, 2.9, 0]} castShadow><coneGeometry args={[0.48, 1.0, 8]} /><meshStandardMaterial color={leaf} roughness={0.8} /></mesh>
+        </>
+      ) : (
+        <mesh position={[0, 1.75, 0]} castShadow>
+          <icosahedronGeometry args={[1.05, 0]} />
+          <meshStandardMaterial color={leaf} roughness={0.85} flatShading />
+        </mesh>
+      )}
+    </group>
+  );
+}
+function Scenery() {
+  const trees = useMemo(() => {
+    let seed = 7;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const out = [];
+    // rama tablei e la ~11.75; ținem copacii pe AMBELE axe dincolo de ea → mereu în
+    // afara tablei, grupați în cele 4 colțuri (nu pe laturi, nu peste căsuțe).
+    for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const n = 5 + (rnd() * 3 | 0);
+      for (let i = 0; i < n; i++) {
+        out.push({
+          x: sx * (13 + rnd() * 9), z: sz * (13 + rnd() * 9),
+          s: 0.85 + rnd() * 0.8, kind: rnd() < 0.5 ? 'pine' : 'round',
+          rot: rnd() * Math.PI * 2, tone: (rnd() * 4) | 0,
+        });
+      }
+    }
+    return out;
+  }, []);
+  return <group>{trees.map((t, i) => <Tree key={i} {...t} />)}</group>;
+}
+
 // Vederea „ideală" a unui pion: camera pe LATURA lui, privind peste tablă,
 // astfel încât pionul activ e cel mai aproape de cameră (latura lui în față).
 const easeCubic = (t) => 1 - Math.pow(1 - t, 3);
+// ease „catifelat": accelerare ȘI decelerare line (mișcări de cameră mai cinematice)
+const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const ORBIT_SPEED = 0.09; // rad/s — orbită lentă continuă în full screen (cinematic „viu")
 
 // memorează parametrii unei orbite line în jurul țintei (folosit în idle, full screen)
@@ -690,7 +753,7 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
       // apropie camera de țintă la impact (zoom-punch)
       const camPos = _tv1.copy(s.view.pos).sub(s.view.tgt).multiplyScalar(1 - 0.13 * k * k).add(s.view.tgt);
       if (k > 0) camPos.add(_tv2.set(Math.random() - 0.5, (Math.random() - 0.5) * 0.6, Math.random() - 0.5).multiplyScalar(0.18 * k));
-      if (el < IN) { const t = easeCubic(el / IN); camera.position.copy(s.fromPos).lerp(camPos, t); tgt.copy(s.fromTgt).lerp(s.view.tgt, t); }
+      if (el < IN) { const t = easeInOut(el / IN); camera.position.copy(s.fromPos).lerp(camPos, t); tgt.copy(s.fromTgt).lerp(s.view.tgt, t); }
       else { camera.position.copy(camPos); tgt.copy(s.view.tgt); }
       camera.lookAt(tgt);
       // trece la urmărire FIX când pornește pionul (sincron local+online) sau ca rezervă după MAX_HOLD
@@ -719,7 +782,7 @@ function CinematicDirector({ rollNonce, controls, pawnPos, pawnMoving, activeTil
     }
 
     if (s.phase === 'glide') {
-      const t = easeCubic(Math.min(1, (now - s.glideT0) / 800));
+      const t = easeInOut(Math.min(1, (now - s.glideT0) / 950));
       camera.position.copy(s.fromPos).lerp(s.toPos, t);
       tgt.copy(s.fromTgt).lerp(s.toTgt, t);
       camera.lookAt(tgt);
@@ -766,9 +829,10 @@ export default function Board3D({ game, dice, rollNonce }) {
         {/* rim light rece din spate → separă obiectele de fundal, aspect mai premium */}
         <directionalLight position={[-12, 9, -14]} intensity={0.35} color="#bcd4ff" />
 
-        {/* decor: cer + munți + iarbă */}
+        {/* decor: cer + munți + iarbă + copaci în colțuri */}
         <Backdrop />
         <Ground />
+        <Scenery />
 
         {/* suprafața centrală deschisă (sub blaturile căsuțelor) */}
         <mesh position={[0, -0.18, 0]} receiveShadow>
