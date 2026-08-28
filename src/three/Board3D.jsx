@@ -24,6 +24,39 @@ function textRotY(index) {
   return Math.PI / 2; // right — citibil din exterior
 }
 
+// Inel de evidențiere PULSANT pentru căsuța curentă (respiră lin: rază + strălucire + opacitate).
+function HighlightRing({ w }) {
+  const inner = useRef(), outer = useRef();
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 3.2);        // 0..1 respirație
+    if (inner.current) {
+      const s = 1 + pulse * 0.06;
+      inner.current.scale.set(s, s, 1);
+      inner.current.material.emissiveIntensity = 0.7 + pulse * 0.9;
+      inner.current.material.opacity = 0.85 + pulse * 0.15;
+    }
+    if (outer.current) {
+      const s2 = 1 + pulse * 0.16;                       // halou exterior care se dilată
+      outer.current.scale.set(s2, s2, 1);
+      outer.current.material.opacity = 0.32 * (1 - pulse);
+    }
+  });
+  return (
+    <group position={[0, H / 2 + 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh ref={outer}>
+        <ringGeometry args={[w * 0.5, w * 0.62, 44]} />
+        <meshBasicMaterial color="#F4C542" transparent opacity={0.3} depthWrite={false} />
+      </mesh>
+      <mesh ref={inner}>
+        <ringGeometry args={[w * 0.36, w * 0.5, 44]} />
+        <meshStandardMaterial color="#E0A82E" emissive="#F4C542" emissiveIntensity={0.9}
+          transparent opacity={0.95} depthWrite={false} />
+      </mesh>
+    </group>
+  );
+}
+
 function Tile({ i, game }) {
   const sq = BOARD[i];
   const { x, z } = pos3(i);
@@ -44,28 +77,35 @@ function Tile({ i, game }) {
   const along = (side === 'left' || side === 'right');
   const nBuild = game.buildings?.[i] || 0;
 
+  // căsuța curentă „prinde viață": strălucire caldă pulsantă pe blat (fără ridicare fizică,
+  // ca pionul/textul de pe ea să rămână perfect aliniate)
+  const tileMat = useRef();
+  useFrame((state, delta) => {
+    if (!tileMat.current) return;
+    const pulse = 0.5 + 0.5 * Math.sin(state.clock.elapsedTime * 3.2);
+    const want = here ? 0.12 + pulse * 0.16 : 0;   // glow cald care respiră
+    tileMat.current.emissiveIntensity += (want - tileMat.current.emissiveIntensity) * Math.min(1, delta * 8);
+  });
+
   return (
     <group position={[x, 0, z]}>
-      <RoundedBox args={[w, H, w]} radius={0.05} smoothness={3} castShadow receiveShadow>
-        <meshStandardMaterial color={corner ? '#F2F1EC' : '#FFFFFF'} roughness={0.75} metalness={0.02} />
-      </RoundedBox>
+      <group>
+        <RoundedBox args={[w, H, w]} radius={0.05} smoothness={3} castShadow receiveShadow>
+          <meshStandardMaterial ref={tileMat} color={corner ? '#F2F1EC' : '#FFFFFF'} roughness={0.75} metalness={0.02}
+            emissive="#F4C542" emissiveIntensity={0} />
+        </RoundedBox>
 
-      {/* bară colorată de grup, pe muchia INTERIOARĂ (spre centru) */}
-      {group && (
-        <mesh position={[-OUT[0] * edge, H / 2 + 0.005, -OUT[1] * edge]}>
-          <boxGeometry args={barGeo} />
-          <meshStandardMaterial color={group.color} />
-        </mesh>
-      )}
+        {/* bară colorată de grup, pe muchia INTERIOARĂ (spre centru) */}
+        {group && (
+          <mesh position={[-OUT[0] * edge, H / 2 + 0.005, -OUT[1] * edge]}>
+            <boxGeometry args={barGeo} />
+            <meshStandardMaterial color={group.color} />
+          </mesh>
+        )}
+      </group>
 
-      {/* highlight căsuța curentă — inel DEASUPRA blatului (nu sub el) */}
-      {here && (
-        <mesh position={[0, H / 2 + 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[w * 0.36, w * 0.5, 40]} />
-          <meshStandardMaterial color="#E0A82E" emissive="#E0A82E" emissiveIntensity={0.8}
-            transparent opacity={0.95} depthWrite={false} />
-        </mesh>
-      )}
+      {/* highlight căsuța curentă — inel PULSANT deasupra blatului */}
+      {here && <HighlightRing w={w} />}
 
       {/* nume — la centru (colțul Închisoare are vizualul lui, împărțit pe diagonală) */}
       {!(corner && sq.kind === 'jail') && (
@@ -166,7 +206,8 @@ function Pawn({ player, offset, active, posRef, movingRef }) {
     anim.current.endTile = player.pos;
   }
 
-  useFrame((_, delta) => {
+  const matRefs = useRef([]);
+  useFrame((state, delta) => {
     const a = anim.current;
     let x, z, y, moving;
 
@@ -202,7 +243,17 @@ function Pawn({ player, offset, active, posRef, movingRef }) {
       y = H / 2 + (moving ? Math.sin(frac * Math.PI) * HOP : 0);
     }
 
-    if (ref.current) ref.current.position.set(x, y, z);
+    // PION ACTIV „VIU": când e rândul lui și stă pe loc → plutire lină + rotație domoală + glow
+    const t = state.clock.elapsedTime;
+    let spin = 0, glow = 0;
+    if (active && !moving) {
+      const p = 0.5 + 0.5 * Math.sin(t * 2.4);
+      y += 0.03 + Math.sin(t * 2.4) * 0.04;   // respiră / plutește
+      spin = t * 0.7;                          // se rotește domol
+      glow = 0.1 + p * 0.18;                    // glow discret (pionul își păstrează forma)
+    }
+    if (ref.current) { ref.current.position.set(x, y, z); ref.current.rotation.y = spin; }
+    for (const m of matRefs.current) if (m) m.emissiveIntensity += (glow - m.emissiveIntensity) * Math.min(1, delta * 8);
     if (active && posRef) posRef.current.set(x, y, z);
     if (active && movingRef) movingRef.current = moving;
   });
@@ -211,11 +262,13 @@ function Pawn({ player, offset, active, posRef, movingRef }) {
     <group ref={ref}>
       <mesh position={[0, 0.18, 0]} castShadow>
         <cylinderGeometry args={[0.12, 0.22, 0.36, 20]} />
-        <meshStandardMaterial color={player.color} roughness={0.35} metalness={0.1} />
+        <meshStandardMaterial ref={(m) => (matRefs.current[0] = m)} color={player.color}
+          roughness={0.35} metalness={0.1} emissive={player.color} emissiveIntensity={0} />
       </mesh>
       <mesh position={[0, 0.46, 0]} castShadow>
         <sphereGeometry args={[0.16, 20, 20]} />
-        <meshStandardMaterial color={player.color} roughness={0.35} metalness={0.1} />
+        <meshStandardMaterial ref={(m) => (matRefs.current[1] = m)} color={player.color}
+          roughness={0.35} metalness={0.1} emissive={player.color} emissiveIntensity={0} />
       </mesh>
     </group>
   );
@@ -225,16 +278,27 @@ function Pawn({ player, offset, active, posRef, movingRef }) {
 function makePipTexture(value) {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d');
-  g.fillStyle = '#FBFAF7'; g.fillRect(0, 0, 128, 128);
-  g.fillStyle = '#16181A';
+  // fundal fildeș cu ușor gradient (aspect de fildeș/os, mai premium ca un alb plat)
+  const bg = g.createLinearGradient(0, 0, 128, 128);
+  bg.addColorStop(0, '#FFFFFF'); bg.addColorStop(1, '#EFEBE1');
+  g.fillStyle = bg; g.fillRect(0, 0, 128, 128);
+  // ramă subțire caldă care sugerează muchia rotunjită a zarului
+  g.strokeStyle = 'rgba(180,170,150,0.5)'; g.lineWidth = 4;
+  g.strokeRect(6, 6, 116, 116);
   const P = {
     1: [[64, 64]], 2: [[36, 36], [92, 92]], 3: [[36, 36], [64, 64], [92, 92]],
     4: [[36, 36], [92, 36], [36, 92], [92, 92]],
     5: [[36, 36], [92, 36], [64, 64], [36, 92], [92, 92]],
     6: [[36, 30], [92, 30], [36, 64], [92, 64], [36, 98], [92, 98]],
   }[value];
-  P.forEach(([x, y]) => { g.beginPath(); g.arc(x, y, 13, 0, Math.PI * 2); g.fill(); });
-  const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t;
+  P.forEach(([x, y]) => {
+    // pip cu adâncime: umbră + disc + mică lumină speculară
+    const rg = g.createRadialGradient(x - 3, y - 3, 1, x, y, 14);
+    rg.addColorStop(0, '#3a3d42'); rg.addColorStop(1, '#101215');
+    g.fillStyle = rg; g.beginPath(); g.arc(x, y, 13, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.25)'; g.beginPath(); g.arc(x - 4, y - 4, 3.5, 0, Math.PI * 2); g.fill();
+  });
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4; t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 // valori pe fețe: [+x,-x,+y,-y,+z,-z] = [3,4,1,6,2,5]
 const FACE_VALUES = [3, 4, 1, 6, 2, 5];
@@ -678,7 +742,7 @@ export default function Board3D({ game, dice, rollNonce }) {
 
   return (
     <div className="canvas3d">
-      <Canvas shadows dpr={[1, 1.5]} gl={{ antialias: true, powerPreference: 'high-performance' }}
+      <Canvas shadows="soft" dpr={[1, 1.5]} gl={{ antialias: true, powerPreference: 'high-performance' }}
         onCreated={({ gl }) => {
           // Pe mobil GPU-ul poate „pierde" contextul WebGL (memorie/economisire) → altfel
           // canvas-ul rămâne alb definitiv. preventDefault îi cere browserului să-l restaureze,
@@ -693,10 +757,14 @@ export default function Board3D({ game, dice, rollNonce }) {
         <CinematicDirector rollNonce={rollNonce} controls={controls} pawnPos={pawnPos} pawnMoving={pawnMoving}
           activeTile={game.players.find(p => p.id === game.turn)?.pos ?? 0} turnId={game.turn} />
         <Dice3D dice={dice} rollNonce={rollNonce} turnId={game.turn} />
-        <ambientLight intensity={0.7} />
-        <directionalLight position={[10, 22, 12]} intensity={1.4} castShadow
-          shadow-mapSize-width={1024} shadow-mapSize-height={1024}
+        {/* lumină „oră de aur": cheie caldă cu umbre moi + fill rece de cer/sol (hemisferă) */}
+        <ambientLight intensity={0.42} />
+        <hemisphereLight args={['#cfe6ff', '#7a6b4f', 0.55]} />
+        <directionalLight position={[14, 17, 10]} intensity={1.5} color="#FFEBC2" castShadow
+          shadow-mapSize-width={2048} shadow-mapSize-height={2048} shadow-radius={4} shadow-bias={-0.0004}
           shadow-camera-left={-20} shadow-camera-right={20} shadow-camera-top={20} shadow-camera-bottom={-20} />
+        {/* rim light rece din spate → separă obiectele de fundal, aspect mai premium */}
+        <directionalLight position={[-12, 9, -14]} intensity={0.35} color="#bcd4ff" />
 
         {/* decor: cer + munți + iarbă */}
         <Backdrop />
